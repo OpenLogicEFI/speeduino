@@ -2454,8 +2454,47 @@ void setPinMapping(byte boardID)
         pinSpareTemp2 = A17;
 
         pinTrigger = 20; //The CAS pin
-        pinTrigger2 = 21; //The Cam Sensor pin
-
+        pinTrigger2 = 21; //Th//Pin mappings as per the v0.4 shield
+      pinInjector1 = 8; //Output pin injector 1 is on
+      pinInjector2 = 9; //Output pin injector 2 is on
+      pinInjector3 = 10; //Output pin injector 3 is on
+      pinInjector4 = 11; //Output pin injector 4 is on
+      pinInjector5 = 12; //Output pin injector 5 is on
+      pinInjector6 = 50; //CAUTION: Uses the same as Coil 4 below. 
+      pinCoil1 = 40; //Pin for coil 1
+      pinCoil2 = 38; //Pin for coil 2
+      pinCoil3 = 52; //Pin for coil 3
+      pinCoil4 = 50; //Pin for coil 4
+      pinCoil5 = 34; //Pin for coil 5 PLACEHOLDER value for now
+      pinTrigger = 19; //The CAS pin
+      pinTrigger2 = 18; //The Cam Sensor pin
+      pinTrigger3 = 3; //The Cam sensor 2 pin
+      pinTPS = A2;//TPS input pin
+      pinMAP = A3; //MAP sensor pin
+      pinIAT = A0; //IAT sensor pin
+      pinCLT = A1; //CLS sensor pin
+      pinO2 = A8; //O2 Sensor pin
+      pinBat = A4; //Battery reference voltage pin
+      pinDisplayReset = 48; // OLED reset pin
+      pinTachOut = 49; //Tacho output pin  (Goes to ULN2803)
+      pinIdle1 = 5; //Single wire idle control
+      pinIdle2 = 6; //2 wire idle control
+      pinBoost = 7; //Boost control
+      pinVVT_1 = 4; //Default VVT output
+      pinVVT_2 = 48; //Default VVT2 output
+      pinFuelPump = 45; //Fuel pump output  (Goes to ULN2803)
+      pinStepperDir = 16; //Direction pin  for DRV8825 driver
+      pinStepperStep = 17; //Step pin for DRV8825 driver
+      pinStepperEnable = 24; //Enable pin for DRV8825
+      pinFan = 47; //Pin for the fan output (Goes to ULN2803)
+      pinLaunch = 51; //Can be overwritten below
+      pinFlex = 2; // Flex sensor (Must be external interrupt enabled)
+      pinResetControl = 43; //Reset control output
+      pinBaro = A5;
+      pinVSS = 20;
+      pinWMIEmpty = 46;
+      pinWMIIndicator = 44;
+      pinWMIEnabled = 42;
         pinFuelPump = 5; //Fuel pump output
         pinTachOut = 8; //Tacho output pin
 
@@ -2869,55 +2908,61 @@ void setPinMapping(byte boardID)
 
       case 62: //Detonation Testing case AVR.
       #if defined(CORE_AVR)
-      //Currently copy and paste of MEGA2560 pin mapping
+      // NOT FINISHED
       pinInjector1 = 8; //Output pin injector 1
       pinInjector2 = 9; //Output pin injector 2
       pinInjector3 = 10; //Output pin injector 3
       pinInjector4 = 11; //Output pin injector 4
-      pinInjector5 = 12; //Output pin injector 5
-      pinInjector6 = 50; //Output pin injector 6
-      pinInjector7 = 39; //Output pin injector 7 (placeholder)
-      pinInjector8 = 42; //Output pin injector 8 (placeholder)
+      //pinInjector5 = 12; //Output pin injector 5
+      
       pinCoil1 = 40; //Pin for coil 1
       pinCoil2 = 38; //Pin for coil 2
       pinCoil3 = 52; //Pin for coil 3
-      pinCoil4 = 48; //Pin for coil 4
-      pinCoil5 = 36; //Pin for coil 5
-      pinCoil6 = 34; //Pin for coil 6
-      pinCoil7 = 46; //Pin for coil 7 (placeholder)
-      pinCoil8 = 53; //Pin for coil 8 (placeholder)
+      pinCoil4 = 50; //Pin for coil 4
+      //pinCoil5 = 34; //Pin for coil 5
+      
       pinTrigger = 19; //The CAS pin
       pinTrigger2 = 18; //The Cam Sensor pin
-      pinTrigger3 = 20; //The Cam sensor 2 pin
-      pinTPS = A2;//TPS input pin
-      pinMAP = A3; //MAP sensor pin
-      pinEMAP = A15; //EMAP sensor pin
+      //pinTrigger3 = 21; //The Cam sensor future designs
+      pinTrigger3 = 3; //The Cam sensor 2 pin
+
+      pinFlex = 2; // Flex sensor
+      pinVSS = 20; //VSS input pin
+      pinLaunch = 51; //Launch control pin
+
       pinIAT = A0; //IAT sensor pin
       pinCLT = A1; //CLT sensor pin
-      pinO2 = A8; //O2 Sensor pin
+      pinTPS = A2;//TPS input pin
+      pinMAP = A3; //MAP sensor pin
       pinBat = A4; //Battery reference voltage pin
       pinBaro = A5; //Baro sensor pin
-      pinDisplayReset = 41; // OLED reset pin
-      pinTachOut = 49; //Tacho output pin  (Goes to ULN2003)
-      pinIdle1 = 5; //ICV pin1
-      pinIdle2 = 6; //ICV pin3
-      pinBoost = 7; //Boost control
-      pinVVT_1 = 4; //VVT1 output (intake vanos)
-      pinVVT_2 = 26; //VVT2 output (exhaust vanos)
-      pinFuelPump = 45; //Fuel pump output  (Goes to ULN2003)
+      // A6,A7 Available  
+      pinO2 = A8; //O2 Sensor pin
+      // A9,A10,A11,A12,A13,A14 Available
+      pinEMAP = A15; //EMAP sensor pin 
+      
+      pinIdle1 = 5; //Single wire idle control
+      pinIdle2 = 6; //2 wire idle control
+      pinIdleUp = 37; //(placeholder)
+      
       pinStepperDir = 16; //Stepper valve isn't used with these
       pinStepperStep = 17; //Stepper valve isn't used with these
       pinStepperEnable = 24; //Stepper valve isn't used with these
+
+      pinTachOut = 49; //Tacho output pin  (Goes to ULN2003)
+
+      pinBoost = 7; //Boost control
+      pinVVT_1 = 4; //Default VVT output
+      pinVVT_2 = 48; //Default VVT2 output
+      pinFuelPump = 45; //Fuel pump output  (Goes to ULN2003)
       pinFan = 47; //Pin for the fan output (Goes to ULN2003)
-      pinLaunch = 51; //Launch control pin
-      pinFlex = 2; // Flex sensor
+      
+      pinWMIEmpty = 46;
+      pinWMIIndicator = 44;
+      pinWMIEnabled = 42;
+      
       pinResetControl = 43; //Reset control output
-      pinVSS = 3; //VSS input pin
-      pinWMIEmpty = 31; //(placeholder)
-      pinWMIIndicator = 33; //(placeholder)
-      pinWMIEnabled = 35; //(placeholder)
-      pinIdleUp = 37; //(placeholder)
-      pinCTPS = A6; //(placeholder)
+      //pinDisplayReset = 41; // OLED reset pin
       
      #elif defined(STM32F407xx)
       //Experimental Closed Deck x8 MCU (currently copy of pazzi case)    
