@@ -1446,7 +1446,8 @@ void setPinMapping(byte boardID)
         pinWMIIndicator = 35;
         pinWMIEnabled = 36;
       #elif defined(STM32F407xx)
-     //Pin definitions for experimental board Tjeerd 
+        //Is this finished? Doesn't fit 0.4x well..
+        //Pin definitions for experimental board Tjeerd 
         //Black F407VE wiki.stm32duino.com/index.php?title=STM32F407
 
         //******************************************
@@ -2786,9 +2787,8 @@ void setPinMapping(byte boardID)
       #endif  
       break;
 
-      case 62: //Detonation Testing case AVR.
+      case 62: //Detonation Testing case AVR. Nothing here is finished
       #if defined(CORE_AVR)
-      // NOT FINISHED
       pinInjector1 = 8; //Output pin injector 1
       pinInjector2 = 9; //Output pin injector 2
       pinInjector3 = 10; //Output pin injector 3
@@ -2845,23 +2845,32 @@ void setPinMapping(byte boardID)
       //pinDisplayReset = 41; // OLED reset pin
       
      #elif defined(STM32F407xx)
-      //Experimental Closed Deck x8 MCU (currently copy of pazzi case)    
+      // Closed Deck x8 MCU (Experimental)
+      /* Started with copy of Case: 31 (Pazzi)
+       * Talk to Victor/Josh before settling on any pinout.
+       
+        Notes:
+      *Seperate from upgrade path? Talk to Josh about using v0.4x stm32 in case 3
+         -If not test pull up/down check for use of dual board definitions on single case
+      *
+      
+      */  
       pinInjector1 = PB15; //Output pin injector 1
       pinInjector2 = PB14; //Output pin injector 2
       pinInjector3 = PB12; //Output pin injector 3
       pinInjector4 = PB13; //Output pin injector 4
       pinInjector5 = PA8; //Output pin injector 5
       pinInjector6 = PE7; //Output pin injector 6
-      pinInjector7 = PE13; //Output pin injector 7 (placeholder)
-      pinInjector8 = PE10; //Output pin injector 8 (placeholder)
+      pinInjector7 = PE13; //Output pin injector 7
+      pinInjector8 = PE10; //Output pin injector 8
       pinCoil1 = PE2; //Pin for coil 1
       pinCoil2 = PE3; //Pin for coil 2
       pinCoil3 = PC13; //Pin for coil 3
       pinCoil4 = PE6; //Pin for coil 4
       pinCoil5 = PE4; //Pin for coil 5
       pinCoil6 = PE5; //Pin for coil 6
-      pinCoil7 = PE0; //Pin for coil 7 (placeholder)
-      pinCoil8 = PB9; //Pin for coil 8 (placeholder)
+      pinCoil7 = PE0; //Pin for coil 7
+      pinCoil8 = PB9; //Pin for coil 8
       pinTrigger = PD3; //The CAS pin
       pinTrigger2 = PD4; //The Cam Sensor pin
       pinTPS = PA2;//TPS input pin
@@ -2873,17 +2882,17 @@ void setPinMapping(byte boardID)
       pinBat = PA4; //Battery reference voltage pin
       pinBaro = PA5; //Baro sensor pin
       pinDisplayReset = PE12; // OLED reset pin
-      pinTachOut = PE8; //Tacho output pin  (Goes to ULN2003)
+      pinTachOut = PE8; //Tacho output pin  
       pinIdle1 = PD10; //ICV pin1
       pinIdle2 = PD9; //ICV pin3
       pinBoost = PD8; //Boost control
-      pinVVT_1 = PD11; //VVT1 output (intake vanos)
-      pinVVT_2 = PC7; //VVT2 output (exhaust vanos)
-      pinFuelPump = PE11; //Fuel pump output  (Goes to ULN2003)
+      pinVVT_1 = PD11; //VVT1 output 
+      pinVVT_2 = PC7; //VVT2 output 
+      pinFuelPump = PE11; //Fuel pump output  
       pinStepperDir = PB10; //Stepper valve isn't used with these
       pinStepperStep = PB11; //Stepper valve isn't used with these
       pinStepperEnable = PA15; //Stepper valve isn't used with these
-      pinFan = PE9; //Pin for the fan output (Goes to ULN2003)
+      pinFan = PE9; //Pin for the fan output 
       pinLaunch = PB8; //Launch control pin
       pinFlex = PD7; // Flex sensor
       pinResetControl = PB7; //Reset control output
@@ -2900,8 +2909,8 @@ void setPinMapping(byte boardID)
 
       /* Experiment Notes
       
-        Key notes:
-      *Talk to Victor before settling on this pinout.
+        Notes:
+      *Talk to Victor/Josh before settling on this pinout.
         
         Option Notes:
       *Maybe add inj & ign 3 & 4? Can we re-map the outputs if in 2channel mode?
