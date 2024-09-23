@@ -1451,29 +1451,32 @@ void setPinMapping(byte boardID)
       // = PA10; //RXD1=Bluetooth module
       
       /* Non-obvious pins to refrain from using
-      *
-      
-      
+      * Notes: 
+        -Refrain from doing anything with pins not defined in Case3 for AVR
+        -Check labels of all official v0.4 boards for undefined pins
+        -USB to UART for AVR Serial0 will be required (JellyBean: FT230XS-R)
+        -All common ign IC's are good for 3.3v (Shift anyway?)
+        -Proto/ULN should be 5v
+        -Check datasheet for non-5v tolorant inputs.
+
       */
       // Comments corispond with Mega pin location
-      pinInjector1 = PB12; // 8
-      pinInjector2 = PB13; // 9
-      pinInjector3 = PB14; // 10
-      pinInjector4 = PB15; // 11
-      //pinInjector5 = PA8; // 12
-      //pinInjector6 = PE6 // 50 Same as coil 4 (why is this here?)
-      
+      pinInjector1 = PB10; // 8
+      pinInjector2 = PB11; // 9
+      pinInjector3 = PB12; // 10
+      pinInjector4 = PB13; // 11
+            
       pinCoil1 = PE2; // 40
       pinCoil2 = PE3; // 38
       pinCoil3 = PE4; // 52
       pinCoil4 = PE5; // 50
-      //pinCoil5 = PE4; // Unchosen (34)
       
-      pinIdle1 = PD8; // 5
-      pinIdle2 = PD9; // 6
-      pinBoost = PD10; // 7
-      pinVVT_1 = PD11; // 4
-      pinVVT_2 = PE6; // 48  
+      pinIdle1 = PB15; // 5
+      pinIdle2 = PD8; // 6
+      pinBoost = PD9; // 7
+      pinVVT_1 = PB14; // 4
+
+      pinVVT_2 = PE6; // 48 Same as OLED reset
       
       pinTrigger = PD3; // 19
       pinTrigger2 = PD4; // 18
@@ -1487,7 +1490,7 @@ void setPinMapping(byte boardID)
       pinO2 = PB0; //O2 Sensor pin
       pinBat = PA4; //Battery reference voltage pin
       pinBaro = PA5; //Baro sensor pin
-      pinDisplayReset = PE12; // OLED reset pin
+      pinDisplayReset = PE12; // OLED reset pin (48)
       pinTachOut = PE8; //Tacho output pin  (Goes to ULN2003)
       
       pinFuelPump = PE11; //Fuel pump output  (Goes to ULN2003)
