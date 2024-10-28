@@ -1446,7 +1446,7 @@ void setPinMapping(byte boardID)
         pinWMIIndicator = 35;
         pinWMIEnabled = 36;
       #elif defined(STM32F407xx)
-      //Expertimental Stm32f407 v0.4 layout
+      //Expertimental Stm32f407 v0.4 layout (test board non-production)
       // = PA9;  //TXD1=Bluetooth module
       // = PA10; //RXD1=Bluetooth module
       
@@ -1457,56 +1457,59 @@ void setPinMapping(byte boardID)
         -USB to UART for AVR Serial0 will be required (JellyBean: FT230XS-R)
         -All common ign IC's are good for 3.3v (Shift anyway?)
         -Proto/ULN should be 5v
-        -Check datasheet for non-5v tolorant inputs.
+        -Check datasheet for non-5v tolerant inputs.
 
       */
-      // Comments corispond with Mega pin location
-      pinInjector1 = PB10; // 8
-      pinInjector2 = PB11; // 9
-      pinInjector3 = PB12; // 10
-      pinInjector4 = PB13; // 11
+      // Comments correspond with Mega pin location
+      pinInjector1 = PB12; // 8
+      pinInjector2 = PB13; // 9
+      pinInjector3 = PB14; // 10
+      pinInjector4 = PB15; // 11
             
-      pinCoil1 = PE2; // 40
-      pinCoil2 = PE3; // 38
-      pinCoil3 = PE4; // 52
-      pinCoil4 = PE5; // 50
+      pinCoil1 = PD4; // 40
+      pinCoil2 = PA15; // 38
+      pinCoil3 = PC13; // 52
+      pinCoil4 = PE6; // 50
       
-      pinIdle1 = PB15; // 5
-      pinIdle2 = PD8; // 6
-      pinBoost = PD9; // 7
-      pinVVT_1 = PB14; // 4
-
-      pinVVT_2 = PE6; // 48 Same as OLED reset
+      pinIdle1 = PC7; // 5
+      pinIdle2 = PA8; // 6
+      pinBoost = PD8; // 7
+      pinVVT_1 = PC6; // 4
+      pinVVT_2 = PE3; // 48 Same as OLED reset
       
-      pinTrigger = PD3; // 19
-      pinTrigger2 = PD4; // 18
-      pinTrigger3 = PD13; // 3
+      pinTrigger = PE14; // 19
+      pinTrigger2 = PE15; // 18
+      //pinTrigger3 = PD15; // 3
 
-      pinTPS = PA2;//TPS input pin
-      pinMAP = PA3; //MAP sensor pin
-      pinEMAP = PC5; //EMAP sensor pin
-      pinIAT = PA0; //IAT sensor pin
-      pinCLT = PA1; //CLS sensor pin
-      pinO2 = PB0; //O2 Sensor pin
-      pinBat = PA4; //Battery reference voltage pin
+      pinTPS = PC2;//TPS input pin
+      pinMAP = PC3; //MAP sensor pin
+      //pinEMAP = PC5; //EMAP sensor pin
+      pinIAT = PC0; //IAT sensor pin
+      pinCLT = PC1; //CLS sensor pin
+      pinO2 = PA4; //O2 Sensor pin
+      pinBat = PA0; //Battery reference voltage pin
       pinBaro = PA5; //Baro sensor pin
-      pinDisplayReset = PE12; // OLED reset pin (48)
-      pinTachOut = PE8; //Tacho output pin  (Goes to ULN2003)
+      pinTachOut = PE0; //Tacho output pin  (Goes to ULN2003)
       
-      pinFuelPump = PE11; //Fuel pump output  (Goes to ULN2003)
+      pinFuelPump = PB7; //Fuel pump output  (Goes to ULN2003)
       pinStepperDir = PB10; //Stepper valve isn't used with these
       pinStepperStep = PB11; //Stepper valve isn't used with these
-      pinStepperEnable = PA15; //Stepper valve isn't used with these
-      pinFan = PE9; //Pin for the fan output (Goes to ULN2003)
-      pinLaunch = PB8; //Launch control pin
-      pinFlex = PD7; // Flex sensor
-      pinResetControl = PB7; //Reset control output
-      pinVSS = PB6; //VSS input pin
-      pinWMIEmpty = PD15; //(placeholder)
-      pinWMIIndicator = PD13; //(placeholder)
-      pinWMIEnabled = PE15; //(placeholder)
-      pinIdleUp = PE14; //(placeholder)
-      pinCTPS = PA6; //(placeholder)
+      pinStepperEnable = PE10; //Stepper valve isn't used with these
+      pinFan = PB9; //Pin for the fan output (Goes to ULN2003)
+      pinLaunch = PE4; //Launch control pin
+      pinFlex = PD10; // Flex sensor
+      pinVSS = PE13; //VSS input pin
+      pinWMIEmpty = PE2; //(placeholder)
+      pinWMIIndicator = PB8; //(placeholder)
+      pinWMIEnabled = PE10; //(placeholder)
+
+      pinResetControl = PD7; //Reset control output
+      pinDisplayReset = PE3; // OLED reset pin (48)
+
+        //CS pin number is now set in a compile flag. 
+        // #ifdef USE_SPI_EEPROM
+        //   pinSPIFlash_CS = PE1;
+        // #endif
 
       #elif defined(CORE_STM32)
         //https://github.com/stm32duino/Arduino_Core_STM32/blob/master/variants/Generic_F411Cx/variant.h#L28
@@ -1559,11 +1562,6 @@ void setPinMapping(byte boardID)
       pinTrigger = 19; //The CAS pin
       pinTrigger2 = 18; //The Cam Sensor pin
       pinTrigger3 = 2; //The Cam sensor 2 pin
-      pinTPS = A2;//TPS input pin
-      pinMAP = A5; //MAP sensor pin
-      pinIAT = A0; //IAT sensor pin
-      pinCLT = A1; //CLS sensor pin
-      pinO2 = A3; //O2 Sensor pin
       pinBat = A4; //Battery reference voltage pin
       pinDisplayReset = 48; // OLED reset pin
       pinTachOut = 23; //Tacho output pin  (Goes to ULN2803)
@@ -1705,11 +1703,7 @@ void setPinMapping(byte boardID)
 
     case 10:
     #ifndef SMALL_FLASH_MODE //No support for bluepill here anyway
-      //Pin mappings for user turtanas PCB
-      pinInjector1 = 4; //Output pin injector 1 is on
-      pinInjector2 = 5; //Output pin injector 2 is on
-      pinInjector3 = 6; //Output pin injector 3 is on
-      pinInjector4 = 7; //Output pin injector 4 is on
+      //Pin mappings for user turtanD8 injector 4 is on
       pinInjector5 = 8; //Placeholder only - NOT USED
       pinInjector6 = 9; //Placeholder only - NOT USED
       pinInjector7 = 10; //Placeholder only - NOT USED
@@ -2907,11 +2901,16 @@ void setPinMapping(byte boardID)
       pinIdleUp = PE14; //(placeholder)
       pinCTPS = PA6; //(placeholder)
      
+        //CS pin number is now set in a compile flag. 
+        // #ifdef USE_SPI_EEPROM
+        //   pinSPIFlash_CS = PE1;
+        // #endif
+
       #else (defined(STM32F411xE) || defined(STM32F401xC))
       // 2-4 Channel small footprint. 
 
       //PB2 can't be used as input because is BOOT pin
-
+      // Secondary serial (PA9 = TX1,PA10 = RX1)
       /* Experiment Notes
       
         Notes:
@@ -2921,14 +2920,18 @@ void setPinMapping(byte boardID)
       *Check if Stepper driver enable is really needed.
       
       */
-        
+
+        //FreePins, PB12,PB13,PB14,PB15,PA11
+     
+        //PB2 can't be used as input because is BOOT pin
         pinInjector1 = PB7; //Output pin injector 1 is on
         pinInjector2 = PB6; //Output pin injector 2 is on
-        pinCoil1 = PB5; //Output pin coil 1
-        pinCoil2 = PB4; //Output pin coil 2
-        
-        //FreePins, PA15, PA10, PA9, PB15, PB14, PB13
-        
+        pinInjector3 = PB5; //Output pin injector 3 is on
+        pinInjector4 = PB4; //Output pin injector 4 is on
+        pinCoil1 = PB9; //Pin for coil 1
+        pinCoil2 = PB8; //Pin for coil 2
+        pinCoil3 = PB3; //Pin for coil 3
+        pinCoil4 = PA15; //Pin for coil 4
         //Analog
         pinTPS = PA2;//TPS input pin
         pinMAP = PA3; //MAP sensor pin
@@ -2937,31 +2940,27 @@ void setPinMapping(byte boardID)
         pinCLT = PA1; //CLS sensor pin
         pinO2 = PB0; //O2 Sensor pin
         pinBat = PA4; //Battery reference voltage pin
-
-        //Use jumper to use as digital or analog input?
+        // Accessories
+        pinTachOut = PB1; //Tacho output pin  
+        pinIdle1 = PB2; //Single wire idle control
+        pinIdle2 = PB10; //2 wire idle control
+        pinBoost = ; //Boost control
+        pinStepperDir = PB10; //Direction pin  for DRV8825 driver
+        pinStepperStep = PB2; //Step pin for DRV8825 driver
+        pinFuelPump = PA8; //Fuel pump output
+        pinFan = ; //Pin for the fan output 
+        //Spare Pins
         pinSpareTemp1 = PA5; // Aux analog input
         pinSpareTemp2 = PA6; // Aux analog input
-
-        //Can this be customized? 
-        pinTachOut = PB2; //Tacho output pin (output only)
-
-        pinIdle1 = PB8; //Same as Step pin for DRV8825
-        pinIdle2 = PB9; //Same as Direction pin for DRV8825
-        //pinStepperEnable = ; //Is this pin even needed?
-        pinStepperDir = PB9; //Direction pin for DRV8825 driver. Same as Idle2
-        pinStepperStep = PB8; //Step pin for DRV8825 driver. Same as Idle2
-        
-        pinBoost = PB3; //Boost control
-        pinFuelPump = PA8; //Fuel pump output
-
-        //Is this PWM capable? 
-        pinFan = PB10; //Pin for the fan output. 
-
         //external interrupt enabled pins
-        //are interputs specific to these pins? Can these pins be changed? 
-        pinFlex = PC14; // Flex sensor 
-        pinTrigger = PC13; //The CAS pin (LED Pin)
-        pinTrigger2 = PC15; //The Cam Sensor pin 
+        pinFlex = PC14; // Flex sensor (Must be external interrupt enabled)
+        pinTrigger = PC13; //The CAS pin also led pin so bad idea
+        pinTrigger2 = PC15; //The Cam Sensor pin
+
+
+//////////////////////////////////////////////////////
+
+
         #endif
       break;
   }
