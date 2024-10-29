@@ -236,18 +236,19 @@ void initialiseAll(void)
     initialiseCorrections();
     BIT_CLEAR(currentStatus.engineProtectStatus, PROTECT_IO_ERROR); //Clear the I/O error bit. The bit will be set in initialiseADC() if there is problem in there.
     initialiseADC();
+    initialiseMAPBaro();
     initialiseProgrammableIO();
 
     //Check whether the flex sensor is enabled and if so, attach an interrupt for it
     if(configPage2.flexEnabled > 0)
     {
-      attachInterrupt(digitalPinToInterrupt(pinFlex), flexPulse, CHANGE);
+      if(!pinIsReserved(pinFlex)) { attachInterrupt(digitalPinToInterrupt(pinFlex), flexPulse, CHANGE); }
       currentStatus.ethanolPct = 0;
     }
     //Same as above, but for the VSS input
     if(configPage2.vssMode > 1) // VSS modes 2 and 3 are interrupt drive (Mode 1 is CAN)
     {
-      attachInterrupt(digitalPinToInterrupt(pinVSS), vssPulse, RISING);
+      if(!pinIsReserved(pinVSS)) { attachInterrupt(digitalPinToInterrupt(pinVSS), vssPulse, RISING); }
     }
     //As above but for knock pulses
     if(configPage10.knock_mode == KNOCK_MODE_DIGITAL)
@@ -255,8 +256,11 @@ void initialiseAll(void)
       if(configPage10.knock_pullup) { pinMode(configPage10.knock_pin, INPUT_PULLUP); }
       else { pinMode(configPage10.knock_pin, INPUT); }
 
-      if(configPage10.knock_trigger == KNOCK_TRIGGER_HIGH) { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, RISING); }
-      else { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, FALLING); }
+      if(!pinIsReserved(configPage10.knock_pin)) 
+      { 
+        if(configPage10.knock_trigger == KNOCK_TRIGGER_HIGH) { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, RISING); }
+        else { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, FALLING); }
+      }
     }
 
     //Once the configs have been loaded, a number of one time calculations can be completed
@@ -309,11 +313,7 @@ void initialiseAll(void)
     fixedCrankingOverride = 0;
     timer5_overflow_count = 0;
     toothHistoryIndex = 0;
-    toothLastToothTime = 0;
-
-    //Lookup the current MAP reading for barometric pressure
-    instanteneousMAPReading();
-    readBaro();
+    resetDecoder();
     
     noInterrupts();
     initialiseTriggers();
@@ -1445,6 +1445,7 @@ void setPinMapping(byte boardID)
         pinWMIEmpty = 34;
         pinWMIIndicator = 35;
         pinWMIEnabled = 36;
+
       #elif defined(STM32F407xx)
       //Expertimental Stm32f407 v0.4 layout (test board non-production)
       // = PA9;  //TXD1=Bluetooth module
@@ -1508,7 +1509,7 @@ void setPinMapping(byte boardID)
 
         //CS pin number is now set in a compile flag. 
         // #ifdef USE_SPI_EEPROM
-        //   pinSPIFlash_CS = PE1;
+      //pinSPIFlash_CS = PE1;
         // #endif
 
       #elif defined(CORE_STM32)
@@ -1562,6 +1563,11 @@ void setPinMapping(byte boardID)
       pinTrigger = 19; //The CAS pin
       pinTrigger2 = 18; //The Cam Sensor pin
       pinTrigger3 = 2; //The Cam sensor 2 pin
+      pinTPS = A2;//TPS input pin
+      pinMAP = A5; //MAP sensor pin
+      pinIAT = A0; //IAT sensor pin
+      pinCLT = A1; //CLS sensor pin
+      pinO2 = A3; //O2 Sensor pin
       pinBat = A4; //Battery reference voltage pin
       pinDisplayReset = 48; // OLED reset pin
       pinTachOut = 23; //Tacho output pin  (Goes to ULN2803)
@@ -1703,7 +1709,11 @@ void setPinMapping(byte boardID)
 
     case 10:
     #ifndef SMALL_FLASH_MODE //No support for bluepill here anyway
-      //Pin mappings for user turtanD8 injector 4 is on
+      //Pin mappings for user turtanas PCB
+      pinInjector1 = 4; //Output pin injector 1 is on
+      pinInjector2 = 5; //Output pin injector 2 is on
+      pinInjector3 = 6; //Output pin injector 3 is on
+      pinInjector4 = 7; //Output pin injector 4 is on
       pinInjector5 = 8; //Placeholder only - NOT USED
       pinInjector6 = 9; //Placeholder only - NOT USED
       pinInjector7 = 10; //Placeholder only - NOT USED
@@ -2285,49 +2295,10 @@ void setPinMapping(byte boardID)
         pinSpareTemp2 = A17;
 
         pinTrigger = 20; //The CAS pin
-        pinTrigger2 = 21; //Th//Pin mappings as per the v0.4 shield
-      pinInjector1 = 8; //Output pin injector 1 is on
-      pinInjector2 = 9; //Output pin injector 2 is on
-      pinInjector3 = 10; //Output pin injector 3 is on
-      pinInjector4 = 11; //Output pin injector 4 is on
-      pinInjector5 = 12; //Output pin injector 5 is on
-      pinInjector6 = 50; //CAUTION: Uses the same as Coil 4 below. 
-      pinCoil1 = 40; //Pin for coil 1
-      pinCoil2 = 38; //Pin for coil 2
-      pinCoil3 = 52; //Pin for coil 3
-      pinCoil4 = 50; //Pin for coil 4
-      pinCoil5 = 34; //Pin for coil 5 PLACEHOLDER value for now
-      pinTrigger = 19; //The CAS pin
-      pinTrigger2 = 18; //The Cam Sensor pin
-      pinTrigger3 = 3; //The Cam sensor 2 pin
-      pinTPS = A2;//TPS input pin
-      pinMAP = A3; //MAP sensor pin
-      pinIAT = A0; //IAT sensor pin
-      pinCLT = A1; //CLS sensor pin
-      pinO2 = A8; //O2 Sensor pin
-      pinBat = A4; //Battery reference voltage pin
-      pinDisplayReset = 48; // OLED reset pin
-      pinTachOut = 49; //Tacho output pin  (Goes to ULN2803)
-      pinIdle1 = 5; //Single wire idle control
-      pinIdle2 = 6; //2 wire idle control
-      pinBoost = 7; //Boost control
-      pinVVT_1 = 4; //Default VVT output
-      pinVVT_2 = 48; //Default VVT2 output
-      pinFuelPump = 45; //Fuel pump output  (Goes to ULN2803)
-      pinStepperDir = 16; //Direction pin  for DRV8825 driver
-      pinStepperStep = 17; //Step pin for DRV8825 driver
-      pinStepperEnable = 24; //Enable pin for DRV8825
-      pinFan = 47; //Pin for the fan output (Goes to ULN2803)
-      pinLaunch = 51; //Can be overwritten below
-      pinFlex = 2; // Flex sensor (Must be external interrupt enabled)
-      pinResetControl = 43; //Reset control output
-      pinBaro = A5;
-      pinVSS = 20;
-      pinWMIEmpty = 46;
-      pinWMIIndicator = 44;
-      pinWMIEnabled = 42;
+        pinTrigger2 = 21; //The Cam Sensor pin
+
         pinFuelPump = 5; //Fuel pump output
-        pinTachOut = 8; //Tacho output pin
+        pinTachOut = 0; //Tacho output pin
 
         pinResetControl = 49; //PLaceholder only. Cannot use 42-47 as these are the SD card
 
@@ -2737,57 +2708,6 @@ void setPinMapping(byte boardID)
       #endif  
       break;
 
-      case 61:
-      #if defined(STM32F407xx)
-        // MEGA32BLUE 0.4 board pinout
-        //Pin definitions for experimental mega replacement by gurov for 0.4 board, defined as 4x4 
-        pinInjector1 = PD8; //
-        pinInjector2 = PD9; //
-        pinInjector3 = PD10; //
-        pinInjector4 = PD11; //
-        pinInjector5 = PA8; //
-        // pinInjector6 = PE11; //
-        // pinInjector7 = PE14; //
-        // pinInjector8 = PE13; //
-
-        pinCoil1 = PE2; //
-        pinCoil2 = PE3; //
-        pinCoil3 = PC13;
-        pinCoil4 = PE7;//
-        // pinCoil5 = PD9;  //
-        // pinCoil6 = PB7;  //
-
-        pinVVT_1 = PB12; //
-        pinVVT_2 = PE6; //
-        pinVSS   = PB4;
-
-        pinBaro = PA5;  //
-        pinIAT = PA0;   //
-        pinTPS = PA2;   //
-        pinMAP = PA3;   //
-        pinCLT = PA1;   //
-        pinO2 = PB0;    //
-        pinBat = PA4;   //
-
-        pinBoost = PB15; //
-        pinIdle1 = PB13; //
-        pinIdle2 = PB14;
-        pinTachOut = PE8; //
-        pinFlex = PD7;
-        pinLaunch = PB8;
-
-        pinTrigger = PD4; //
-        pinTrigger2 = PD3; //
-        pinTrigger3 = PB6; //
-        pinStepperEnable = PA15; //
-        pinStepperStep = PB11; //
-        pinStepperDir = PB10; //
-
-        pinFuelPump = PE11; //
-        pinFan = PE9; //
-      #endif
-      break;
-
       case 62: //Detonation Testing case AVR. Nothing here is finished
       #if defined(CORE_AVR)
       pinInjector1 = 8; //Output pin injector 1
@@ -2956,15 +2876,10 @@ void setPinMapping(byte boardID)
         pinFlex = PC14; // Flex sensor (Must be external interrupt enabled)
         pinTrigger = PC13; //The CAS pin also led pin so bad idea
         pinTrigger2 = PC15; //The Cam Sensor pin
-
-
-//////////////////////////////////////////////////////
-
-
-        #endif
-      break;
+  #endif
+  break;
   }
-  
+
   //Setup any devices that are using selectable pins
 
   if ( (configPage6.launchPin != 0) && (configPage6.launchPin < BOARD_MAX_IO_PINS) ) { pinLaunch = pinTranslate(configPage6.launchPin); }
@@ -3017,6 +2932,7 @@ void setPinMapping(byte boardID)
     pinMode(pinResetControl, OUTPUT);
   }
   
+
   //Finally, set the relevant pin modes for outputs
   pinMode(pinTachOut, OUTPUT);
   pinMode(pinIdle1, OUTPUT);
