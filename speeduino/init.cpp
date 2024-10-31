@@ -236,18 +236,19 @@ void initialiseAll(void)
     initialiseCorrections();
     BIT_CLEAR(currentStatus.engineProtectStatus, PROTECT_IO_ERROR); //Clear the I/O error bit. The bit will be set in initialiseADC() if there is problem in there.
     initialiseADC();
+    initialiseMAPBaro();
     initialiseProgrammableIO();
 
     //Check whether the flex sensor is enabled and if so, attach an interrupt for it
     if(configPage2.flexEnabled > 0)
     {
-      attachInterrupt(digitalPinToInterrupt(pinFlex), flexPulse, CHANGE);
+      if(!pinIsReserved(pinFlex)) { attachInterrupt(digitalPinToInterrupt(pinFlex), flexPulse, CHANGE); }
       currentStatus.ethanolPct = 0;
     }
     //Same as above, but for the VSS input
     if(configPage2.vssMode > 1) // VSS modes 2 and 3 are interrupt drive (Mode 1 is CAN)
     {
-      attachInterrupt(digitalPinToInterrupt(pinVSS), vssPulse, RISING);
+      if(!pinIsReserved(pinVSS)) { attachInterrupt(digitalPinToInterrupt(pinVSS), vssPulse, RISING); }
     }
     //As above but for knock pulses
     if(configPage10.knock_mode == KNOCK_MODE_DIGITAL)
@@ -255,8 +256,11 @@ void initialiseAll(void)
       if(configPage10.knock_pullup) { pinMode(configPage10.knock_pin, INPUT_PULLUP); }
       else { pinMode(configPage10.knock_pin, INPUT); }
 
-      if(configPage10.knock_trigger == KNOCK_TRIGGER_HIGH) { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, RISING); }
-      else { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, FALLING); }
+      if(!pinIsReserved(configPage10.knock_pin)) 
+      { 
+        if(configPage10.knock_trigger == KNOCK_TRIGGER_HIGH) { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, RISING); }
+        else { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, FALLING); }
+      }
     }
 
     //Once the configs have been loaded, a number of one time calculations can be completed
@@ -309,11 +313,7 @@ void initialiseAll(void)
     fixedCrankingOverride = 0;
     timer5_overflow_count = 0;
     toothHistoryIndex = 0;
-    toothLastToothTime = 0;
-
-    //Lookup the current MAP reading for barometric pressure
-    instanteneousMAPReading();
-    readBaro();
+    resetDecoder();
     
     noInterrupts();
     initialiseTriggers();
@@ -2330,7 +2330,7 @@ void setPinMapping(byte boardID)
       pinWMIIndicator = 44;
       pinWMIEnabled = 42;
         pinFuelPump = 5; //Fuel pump output
-        pinTachOut = 8; //Tacho output pin
+        pinTachOut = 0; //Tacho output pin
 
         pinResetControl = 49; //PLaceholder only. Cannot use 42-47 as these are the SD card
 
