@@ -1446,16 +1446,8 @@ void setPinMapping(byte boardID)
         pinWMIIndicator = 35;
         pinWMIEnabled = 36;
       #elif defined(STM32F407xx)
-      //Expertimental Stm32f407 v0.4 layout
-      // = PA9;  //TXD1=Bluetooth module
-      // = PA10; //RXD1=Bluetooth module
-      
-      /* Non-obvious pins to refrain from using
-      *
-      
-      
-      */
-      // Comments corispond with Mega pin location
+      //Expertimental Stm32f407 v0.4 layout (Detonation)
+      //Comments corispond with Mega pin location
       pinInjector1 = PB12; // 8
       pinInjector2 = PB13; // 9
       pinInjector3 = PB14; // 10
@@ -1475,36 +1467,35 @@ void setPinMapping(byte boardID)
       pinVVT_1 = PD11; // 4
       pinVVT_2 = PE6; // 48  
       
-      pinTrigger = PD3; // 19
-      pinTrigger2 = PD4; // 18
-      pinTrigger3 = PD13; // 3
+      pinTrigger = PD3; // 19 (Input interupt)
+      pinTrigger2 = PD4; // 18 (Input interupt)
+      pinTrigger3 = PD13; // 3 (Input interupt)
 
-      pinTPS = PA2;//TPS input pin
-      pinMAP = PA3; //MAP sensor pin
-      pinEMAP = PC5; //EMAP sensor pin
-      pinIAT = PA0; //IAT sensor pin
-      pinCLT = PA1; //CLS sensor pin
-      pinO2 = PB0; //O2 Sensor pin
-      pinBat = PA4; //Battery reference voltage pin
-      pinBaro = PA5; //Baro sensor pin
-      pinDisplayReset = PE12; // OLED reset pin
-      pinTachOut = PE8; //Tacho output pin  (Goes to ULN2003)
+      pinTPS = PA2;// A2
+      pinMAP = PA3; // A3
+      pinIAT = PA0; // A0
+      pinCLT = PA1; // A1
+      pinO2 = PB0; // A8
+      pinBat = PA4; // A4
+      pinBaro = PA5; // A5
+
+      pinDisplayReset = PE12; // 48 (Same as VVT_2)
+
+      pinTachOut = PE8; // 49
       
-      pinFuelPump = PE11; //Fuel pump output  (Goes to ULN2003)
-      pinStepperDir = PB10; //Stepper valve isn't used with these
-      pinStepperStep = PB11; //Stepper valve isn't used with these
-      pinStepperEnable = PA15; //Stepper valve isn't used with these
-      pinFan = PE9; //Pin for the fan output (Goes to ULN2003)
-      pinLaunch = PB8; //Launch control pin
-      pinFlex = PD7; // Flex sensor
-      pinResetControl = PB7; //Reset control output
-      pinVSS = PB6; //VSS input pin
-      pinWMIEmpty = PD15; //(placeholder)
-      pinWMIIndicator = PD13; //(placeholder)
-      pinWMIEnabled = PE15; //(placeholder)
-      pinIdleUp = PE14; //(placeholder)
-      pinCTPS = PA6; //(placeholder)
-
+      pinFuelPump = PE11; // 45
+      pinStepperDir = PB10; // 16
+      pinStepperStep = PB11; // 17
+      pinStepperEnable = PA15; // 24
+      pinFan = PE9; // 47
+      pinLaunch = PB8; // 51
+      pinFlex = PD7; // 2 (Input interupt)
+      pinResetControl = PB7; // 43 (Not used on stm23)
+      pinVSS = PB6; // 20 (Input interupt)
+      pinWMIEmpty = PD15; // 46
+      pinWMIIndicator = PD13; // 44
+      pinWMIEnabled = PE15; // 42
+      
       #elif defined(CORE_STM32)
         //https://github.com/stm32duino/Arduino_Core_STM32/blob/master/variants/Generic_F411Cx/variant.h#L28
         //pins PA12, PA11 are used for USB or CAN couldn't be used for GPIO
@@ -2740,57 +2731,7 @@ void setPinMapping(byte boardID)
       #endif  
       break;
 
-      case 61:
-      #if defined(STM32F407xx)
-        // MEGA32BLUE 0.4 board pinout
-        //Pin definitions for experimental mega replacement by gurov for 0.4 board, defined as 4x4 
-        pinInjector1 = PD8; //
-        pinInjector2 = PD9; //
-        pinInjector3 = PD10; //
-        pinInjector4 = PD11; //
-        pinInjector5 = PA8; //
-        // pinInjector6 = PE11; //
-        // pinInjector7 = PE14; //
-        // pinInjector8 = PE13; //
-
-        pinCoil1 = PE2; //
-        pinCoil2 = PE3; //
-        pinCoil3 = PC13;
-        pinCoil4 = PE7;//
-        // pinCoil5 = PD9;  //
-        // pinCoil6 = PB7;  //
-
-        pinVVT_1 = PB12; //
-        pinVVT_2 = PE6; //
-        pinVSS   = PB4;
-
-        pinBaro = PA5;  //
-        pinIAT = PA0;   //
-        pinTPS = PA2;   //
-        pinMAP = PA3;   //
-        pinCLT = PA1;   //
-        pinO2 = PB0;    //
-        pinBat = PA4;   //
-
-        pinBoost = PB15; //
-        pinIdle1 = PB13; //
-        pinIdle2 = PB14;
-        pinTachOut = PE8; //
-        pinFlex = PD7;
-        pinLaunch = PB8;
-
-        pinTrigger = PD4; //
-        pinTrigger2 = PD3; //
-        pinTrigger3 = PB6; //
-        pinStepperEnable = PA15; //
-        pinStepperStep = PB11; //
-        pinStepperDir = PB10; //
-
-        pinFuelPump = PE11; //
-        pinFan = PE9; //
-      #endif
-      break;
-
+      //OpenLogicEFI Multiple use case
       case 62: //Detonation Testing case AVR. Nothing here is finished
       #if defined(CORE_AVR)
       pinInjector1 = 8; //Output pin injector 1
