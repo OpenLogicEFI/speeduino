@@ -3,7 +3,7 @@ name: Sync release branch to latest Speeduino tag
 on:
   schedule:
     - cron: "0 */6 * * *"   # every 6 hours
-  workflow_dispatch:        # manual "Run workflow" button
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          token: ${{ secrets.GITHUB_TOKEN }}   # <-- keep credentials
 
       - name: Add upstream and fetch tags
         run: |
@@ -31,5 +31,9 @@ jobs:
           # Create/update branch 'release' to that tag
           git checkout -B release "$LATEST_TAG"
 
-          # Push to *your* fork
+          # Configure author so push works cleanly
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Push to your fork
           git push origin release --force
