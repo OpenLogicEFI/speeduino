@@ -5,18 +5,20 @@ on:
     - cron: "0 */6 * * *"   # every 6 hours
   workflow_dispatch:
 
+# Permissions for the GITHUB_TOKEN used in this workflow
+permissions:
+  contents: write
+  workflows: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      workflows: write
 
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}   # <-- keep credentials
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add upstream and fetch tags
         run: |
@@ -25,14 +27,14 @@ jobs:
 
       - name: Point release branch at latest tag
         run: |
-          # Find latest tag on upstream
+          # Find latest tag on upstream/master
           LATEST_TAG=$(git describe --tags --abbrev=0 upstream/master)
           echo "Latest upstream tag is: $LATEST_TAG"
 
-          # Create/update branch 'release' to that tag
+          # Create/update branch 'release' at that tag
           git checkout -B release "$LATEST_TAG"
 
-          # Configure author so push works cleanly
+          # Identity for the push
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
