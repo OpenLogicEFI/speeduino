@@ -1,0 +1,35 @@
+name: Sync release branch to latest Speeduino tag
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+  workflow_dispatch:        # manual "Run workflow" button
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Add upstream and fetch tags
+        run: |
+          git remote add upstream https://github.com/speeduino/speeduino.git
+          git fetch upstream --tags
+
+      - name: Point release branch at latest tag
+        run: |
+          # Find latest tag on upstream
+          LATEST_TAG=$(git describe --tags --abbrev=0 upstream/master)
+          echo "Latest upstream tag is: $LATEST_TAG"
+
+          # Create/update branch 'release' to that tag
+          git checkout -B release "$LATEST_TAG"
+
+          # Push to *your* fork
+          git push origin release --force
