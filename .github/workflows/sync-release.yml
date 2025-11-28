@@ -5,10 +5,8 @@ on:
     - cron: "0 */6 * * *"   # every 6 hours
   workflow_dispatch:
 
-# Permissions for the GITHUB_TOKEN used in this workflow
 permissions:
   contents: write
-  workflows: write
 
 jobs:
   sync:
@@ -18,7 +16,8 @@ jobs:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use your personal access token, which *does* have workflow perms
+          token: ${{ secrets.RELEASE_SYNC_TOKEN }}
 
       - name: Add upstream and fetch tags
         run: |
