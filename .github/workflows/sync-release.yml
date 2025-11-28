@@ -28,7 +28,7 @@ jobs:
         run: |
           # Find *highest* numeric tag (e.g. 202501.6 > 202501)
           # All Speeduino releases start with "20", so filter that.
-          LATEST_TAG=$(git tag --sort=version:refname '20*' | tail -n 1)
+          LATEST_TAG=$(git tag -l '20*' --sort=version:refname | tail -n 1)
           echo "Latest upstream tag is: $LATEST_TAG"
 
           # Create/update branch 'release' at that tag
