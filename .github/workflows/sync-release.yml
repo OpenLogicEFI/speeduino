@@ -16,7 +16,7 @@ jobs:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
-          # Use your personal access token, which *does* have workflow perms
+          # Use your PAT that has workflow perms
           token: ${{ secrets.RELEASE_SYNC_TOKEN }}
 
       - name: Add upstream and fetch tags
@@ -26,8 +26,9 @@ jobs:
 
       - name: Point release branch at latest tag
         run: |
-          # Find latest tag on upstream/master
-          LATEST_TAG=$(git describe --tags --abbrev=0 upstream/master)
+          # Find *highest* numeric tag (e.g. 202501.6 > 202501)
+          # All Speeduino releases start with "20", so filter that.
+          LATEST_TAG=$(git tag --sort=version:refname '20*' | tail -n 1)
           echo "Latest upstream tag is: $LATEST_TAG"
 
           # Create/update branch 'release' at that tag
