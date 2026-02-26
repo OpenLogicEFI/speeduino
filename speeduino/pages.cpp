@@ -1,6 +1,12 @@
 #include "pages.h"
 #include "globals.h"
-#include "utilities.h"
+#include "preprocessor.h"
+
+#if defined(CORE_AVR)
+#pragma GCC push_options
+// This minimizes RAM usage at no performance cost
+#pragma GCC optimize ("Os") 
+#endif
 
 // Maps from virtual page "addresses" to addresses/bytes of real in memory entities
 //
@@ -22,26 +28,24 @@
 //  1. Page # + Offset to entity
 //  2. Offset to intra-entity byte
 
-// Page sizes as defined in the .ini file
-constexpr const uint16_t PROGMEM ini_page_sizes[] = { 0, 128, 288, 288, 128, 288, 128, 240, 384, 192, 192, 288, 192, 128, 288, 256 };
-
 // ========================= Table size calculations =========================
 // Note that these should be computed at compile time, assuming the correct
 // calling context.
 
 template <class table_t>
-static inline constexpr uint16_t get_table_value_end(void)
+static constexpr uint16_t get_table_value_end(void)
 {
   return table_t::xaxis_t::length*table_t::yaxis_t::length;
 }
 template <class table_t>
-static inline constexpr uint16_t get_table_axisx_end(void)
+static constexpr uint16_t get_table_axisx_end(void)
 {
   return get_table_value_end<table_t>()+table_t::xaxis_t::length;
 }
 template <class table_t>
-static inline constexpr uint16_t get_table_axisy_end(const table_t *)
+static constexpr uint16_t get_table_axisy_end(const table_t *table)
 {
+  UNUSED(table);
   return get_table_axisx_end<table_t>()+table_t::yaxis_t::length;
 }
 
@@ -65,9 +69,9 @@ public:
   // are specialised per table type, which allows the compiler more optimisation
   // opportunities. See get_table_value().
 
-  offset_to_table(table_t *pTable, uint16_t table_offset)
-  : _pTable(pTable),
-    _table_offset(table_offset)
+  offset_to_table(const table_t *pTable, uint16_t table_offset)
+  : _pTable(const_cast<table_t *>(pTable)), // cppcheck-suppress misra-c2012-10.4
+    _table_offset(min(table_offset, get_table_axisy_end(pTable)))
   {    
   }
 
@@ -102,6 +106,7 @@ public:
       case table_location_yaxis:
       default:
         get_yaxis_value() = new_value;
+        break; 
     }
     invalidate_cache(&_pTable->get_value_cache);
     return *this;
@@ -116,13 +121,19 @@ private:
 
   inline table3d_axis_t& get_xaxis_value(void) const
   {
+    // LCOV_EXCL_BR_START
+    // Can't figure out the missing branches, so exclude for the moment
     return *(_pTable->axisX.begin().advance(_table_offset - get_table_value_end<table_t>()));
+    // LCOV_EXCL_BR_STOP
   }
 
   inline table3d_axis_t& get_yaxis_value(void) const
   {
+    // LCOV_EXCL_BR_START
+    // Can't figure out the missing branches, so exclude for the moment
     return *(_pTable->axisY.begin().advance(_table_offset - get_table_axisx_end<table_t>()));
-  }
+    // LCOV_EXCL_BR_STOP
+}
 
   enum table_location {
       table_location_values, table_location_xaxis, table_location_yaxis 
@@ -147,145 +158,137 @@ private:
 
 // ========================= Offset to entity byte mapping =========================
 
-inline byte& get_raw_location(page_iterator_t &entity, uint16_t offset)
+static inline byte get_raw_location(const page_iterator_t &entity, uint16_t offset)
 {
-  return *((byte*)entity.pData + (offset-entity.start));
-}
-
-inline byte get_table_value(page_iterator_t &entity, uint16_t offset)
-{
-  #define CTA_GET_TABLE_VALUE(size, xDomain, yDomain, pTable, offset) \
-      return *offset_to_table<TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)>((TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)*)pTable, offset);
-  #define CTA_GET_TABLE_VALUE_DEFAULT ({ return 0U; })
-  CONCRETE_TABLE_ACTION(entity.table_key, CTA_GET_TABLE_VALUE, CTA_GET_TABLE_VALUE_DEFAULT, entity.pData, (offset-entity.start));  
-}
-
-inline byte get_value(page_iterator_t &entity, uint16_t offset)
-{
-  if (Raw==entity.type)
+  if (offset<entity.address.size)
   {
-    return get_raw_location(entity, offset);
-  }
-  if (Table==entity.type)
-  {
-    return get_table_value(entity, offset);
+    return *((const byte*)entity.pRaw + offset);
   }
   return 0U;
 }
 
-inline void set_table_value(page_iterator_t &entity, uint16_t offset, byte new_value)
+static inline bool set_raw_location(page_iterator_t &entity, uint16_t offset, byte value)
 {
-  #define CTA_SET_TABLE_VALUE(size, xDomain, yDomain, pTable, offset, new_value) \
-      offset_to_table<TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)>((TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)*)pTable, offset) = new_value; break;
-  #define CTA_SET_TABLE_VALUE_DEFAULT ({ })
-  CONCRETE_TABLE_ACTION(entity.table_key, CTA_SET_TABLE_VALUE, CTA_SET_TABLE_VALUE_DEFAULT, entity.pData, (offset-entity.start), new_value);  
+  if (offset<entity.address.size)
+  {
+    *((byte*)entity.pRaw + offset) = value;
+    return true;
+  }
+  return false;
 }
 
-inline void set_value(page_iterator_t &entity, byte value, uint16_t offset)
+static inline byte get_table_value(const page_iterator_t &entity, uint16_t offset)
+{
+  if (offset<entity.address.size)
+  {
+    // LCOV_EXCL_BR_START
+    // Can't figure out the missing branches, so exclude for the moment
+    #define CTA_GET_TABLE_VALUE(size, xDomain, yDomain, pTable, offset) \
+        return *offset_to_table<TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)>((const TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)*)(pTable), (offset));
+    #define CTA_GET_TABLE_VALUE_DEFAULT ({ return 0U; })
+    CONCRETE_TABLE_ACTION(entity.table_key, CTA_GET_TABLE_VALUE, CTA_GET_TABLE_VALUE_DEFAULT, entity.pTable, offset);  
+    // LCOV_EXCL_BR_STOP
+  }
+  return 0U;
+}
+
+byte getEntityValue(const page_iterator_t &entity, uint16_t offset)
+{
+  if (EntityType::Raw==entity.type)
+  {
+    return get_raw_location(entity, offset);
+  }
+  if (EntityType::Table==entity.type)
+  {
+    return get_table_value(entity, offset);
+  }
+  // Entity has no data
+  return 0U;
+}
+
+static inline bool set_table_value(page_iterator_t &entity, uint16_t offset, byte new_value)
+{
+  if (offset<entity.address.size)
+  {
+    // LCOV_EXCL_BR_START
+    // Can't figure out the missing branches, so exclude for the moment
+    #define CTA_SET_TABLE_VALUE(size, xDomain, yDomain, pTable, offset, new_value) \
+        offset_to_table<TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)>((TABLE3D_TYPENAME_BASE(size, xDomain, yDomain)*)(pTable), (offset)) = (new_value); break;
+    #define CTA_SET_TABLE_VALUE_DEFAULT ({ })
+    CONCRETE_TABLE_ACTION(entity.table_key, CTA_SET_TABLE_VALUE, CTA_SET_TABLE_VALUE_DEFAULT, entity.pTable, offset, new_value);  
+    // LCOV_EXCL_BR_STOP
+    return true;
+  }
+  return false;
+}
+
+bool setEntityValue(page_iterator_t &entity, uint16_t offset, byte value)
 {    
-  if (Raw==entity.type)
+  if (EntityType::Raw==entity.type)
   {
-    get_raw_location(entity, offset) = value;
+    return set_raw_location(entity, offset, value);
   }
-  else if (Table==entity.type)
+  else if (EntityType::Table==entity.type)
   {
-    set_table_value(entity, offset, value);
+    return set_table_value(entity, offset, value);
+  }
+  else
+  {
+    // Unsettable entity type 
+    return false;
   }
 }
 
-// ========================= Static page size computation & checking ===================
+// ========================= Offset to entity support  ===================
 
-// This will fail AND print the page number and required size
-template <uint8_t pageNum, uint16_t min>
-static inline void check_size() {
-  static_assert(ini_page_sizes[pageNum] >= min, "Size is off!");
-}
-
-// Since pages are a logical contiguous block, we can automatically compute the 
-// logical start address of every item: the first one starts at zero, following
-// items must start at the end of the previous.
-#define _ENTITY_START(entityNum) entity ## entityNum ## Start
-#define ENTITY_START_VAR(entityNum) _ENTITY_START(entityNum)
-// Compute the start address of the next entity. We need this to be a constexpr
-// so we can static assert on it later. So we cannot increment an exiting var.
-#define DECLARE_NEXT_ENTITY_START(entityIndex, entitySize) \
-  constexpr uint16_t ENTITY_START_VAR( PP_INC(entityIndex) ) = ENTITY_START_VAR(entityIndex)+entitySize;
-
-// ========================= Logical page end processing ===================
-
-// The members of all page_iterator_t instances are compile time constants and
-// thus all page_iterator_t instances *could* be compile time constants. 
-//
-// If we declare them inline as part of return statements, gcc recognises they 
-// are constants (even without constexpr). Constants need to be stored somewhere:
-// gcc places them in the .data section, which is placed in SRAM :-(. 
-//
-// So we would end up using several hundred bytes of SRAM. 
-//
-// Instead we use this (and other) intermediate factory function(s) - it provides a barrier that
-// forces GCC to construct the page_iterator_t instance at runtime.
-inline const page_iterator_t create_end_iterator(uint8_t pageNum, uint16_t start)
+void nextEntity(page_iterator_t &entity, uint16_t nextBlockSize)
 {
-  return page_iterator_t {
-    .pData = nullptr,
-    .table_key = table_type_None,
-    .page = pageNum,
-    .start = start,
-    .size = start,
-    .type = End,
-  };
+  ++entity.location.index;
+  entity.address = entity.address.next(nextBlockSize);
 }
-
-// Signal the end of a page
-#define END_OF_PAGE(pageNum, entityNum) \
-  check_size<pageNum, ENTITY_START_VAR(entityNum)>(); \
-  return create_end_iterator(pageNum, ENTITY_START_VAR(entityNum)); \
 
 // ========================= Table processing  ===================
 
-inline const page_iterator_t create_table_iterator(void *pTable, table_type_t key, uint8_t pageNum, uint16_t start, uint16_t size)
+template <class table_t>
+static void checkIsInTable(page_iterator_t &result, table_t *pTable, uint16_t offset)
 {
-  return page_iterator_t {
-    .pData = pTable,
-    .table_key = key,
-    .page = pageNum,
-    .start = start,
-    .size = size,
-    .type = Table,
-  };
+  if (result.type==EntityType::End)
+  {
+    nextEntity(result, get_table_axisy_end(pTable));
+    if (result.address.isOffsetInEntity(offset)) 
+    { 
+      result.setTable(pTable, pTable->type_key);
+    }
+  }
 }
-
-// If the offset is in range, create a Table entity_t
-#define CHECK_TABLE(pageNum, offset, pTable, entityNum) \
-  if (offset < ENTITY_START_VAR(entityNum)+get_table_axisy_end(pTable)) \
-  { \
-    return create_table_iterator(pTable, (pTable)->type_key, \
-                                  pageNum, \
-                                  ENTITY_START_VAR(entityNum), get_table_axisy_end(pTable)); \
-  } \
-  DECLARE_NEXT_ENTITY_START(entityNum, get_table_axisy_end(pTable))
 
 // ========================= Raw memory block processing  ===================
 
-inline const page_iterator_t create_raw_iterator(void *pBuffer, uint8_t pageNum, uint16_t start, uint16_t size)
+static void checkIsInRaw(page_iterator_t &result, config_page_t *pEntity, uint16_t entitySize, uint16_t offset)
 {
-  return page_iterator_t {
-    .pData = pBuffer,
-    .table_key = table_type_None,
-    .page = pageNum,
-    .start = start,
-    .size = size,
-    .type = Raw,
-  };
+  if (result.type==EntityType::End)
+  {
+    nextEntity(result, entitySize);
+    if (result.address.isOffsetInEntity(offset)) 
+    { 
+      result.setRaw(pEntity);
+    }
+  }
 }
 
-// If the offset is in range, create a Raw entity_t
-#define CHECK_RAW(pageNum, offset, pDataBlock, blockSize, entityNum) \
-  if (offset < ENTITY_START_VAR(entityNum)+blockSize) \
-  { \
-    return create_raw_iterator(pDataBlock, pageNum, ENTITY_START_VAR(entityNum), blockSize);\
-  } \
-  DECLARE_NEXT_ENTITY_START(entityNum, blockSize)
+// ========================= Empty entity processing  ===================
+
+static void checkIsInEmpty(page_iterator_t &result, uint16_t entitySize, uint16_t offset)
+{
+  if (result.type==EntityType::End)
+  {
+    nextEntity(result, entitySize);
+    if (result.address.isOffsetInEntity(offset)) 
+    { 
+      result.setNoEntity();
+    }
+  }
+}
 
 // ===============================================================================
 
@@ -293,162 +296,202 @@ inline const page_iterator_t create_raw_iterator(void *pBuffer, uint8_t pageNum,
 //
 // Alternative implementation would be to encode the mapping into data structures
 // That uses flash memory, which is scarce. And it was too slow.
-static inline __attribute__((always_inline)) // <-- this is critical for performance
-page_iterator_t map_page_offset_to_entity(uint8_t pageNumber, uint16_t offset)
+static page_iterator_t map_page_offset_to_entity(uint8_t pageNumber, uint16_t offset)
 {
-  // The start address of the 1st entity in any page.
-  static constexpr uint16_t ENTITY_START_VAR(0) = 0U;
+  // This is mutated by the checkIsIn* functions to return the entity that matches the offset
+  page_iterator_t result( EntityType::End, // Signal that no entity has been found yet
+                          entity_page_location_t(pageNumber, (uint8_t)-1 /* Deliberate, so we can increment index AND address as one operation */), 
+                          entity_page_address_t(0U, 0U));
 
   switch (pageNumber)
   {
-    case 0:
-      END_OF_PAGE(0, 0)
-
     case veMapPage:
-    {
-      CHECK_TABLE(veMapPage, offset, &fuelTable, 0)
-      END_OF_PAGE(veMapPage, 1)
-    }
+      checkIsInTable(result, &fuelTable, offset);
+      break;
 
     case ignMapPage: //Ignition settings page (Page 2)
-    {
-      CHECK_TABLE(ignMapPage, offset, &ignitionTable, 0)
-      END_OF_PAGE(ignMapPage, 1)
-    }
+      checkIsInTable(result, &ignitionTable, offset);
+      break;
 
     case afrMapPage: //Air/Fuel ratio target settings page
-    {
-      CHECK_TABLE(afrMapPage, offset, &afrTable, 0)
-      END_OF_PAGE(afrMapPage, 1)
-    }
+      checkIsInTable(result, &afrTable, offset);
+      break;
 
     case boostvvtPage: //Boost, VVT and staging maps (all 8x8)
-    {
-      CHECK_TABLE(boostvvtPage, offset, &boostTable, 0)
-      CHECK_TABLE(boostvvtPage, offset, &vvtTable, 1)
-      CHECK_TABLE(boostvvtPage, offset, &stagingTable, 2)
-      END_OF_PAGE(boostvvtPage, 3)
-    }
+      checkIsInTable(result, &boostTable, offset);
+      checkIsInTable(result, &vvtTable, offset);
+      checkIsInTable(result, &stagingTable, offset);
+      break;
 
     case seqFuelPage:
-    {
-      CHECK_TABLE(seqFuelPage, offset, &trim1Table, 0)
-      CHECK_TABLE(seqFuelPage, offset, &trim2Table, 1)
-      CHECK_TABLE(seqFuelPage, offset, &trim3Table, 2)
-      CHECK_TABLE(seqFuelPage, offset, &trim4Table, 3)
-      CHECK_TABLE(seqFuelPage, offset, &trim5Table, 4)
-      CHECK_TABLE(seqFuelPage, offset, &trim6Table, 5)
-      CHECK_TABLE(seqFuelPage, offset, &trim7Table, 6)
-      CHECK_TABLE(seqFuelPage, offset, &trim8Table, 7)
-      END_OF_PAGE(seqFuelPage, 8)
-    }
+      checkIsInTable(result, &trim1Table, offset);
+      checkIsInTable(result, &trim2Table, offset);
+      checkIsInTable(result, &trim3Table, offset);
+      checkIsInTable(result, &trim4Table, offset);
+      checkIsInTable(result, &trim5Table, offset);
+      checkIsInTable(result, &trim6Table, offset);
+      checkIsInTable(result, &trim7Table, offset);
+      checkIsInTable(result, &trim8Table, offset);
+      break;
 
     case fuelMap2Page:
-    {
-      CHECK_TABLE(fuelMap2Page, offset, &fuelTable2, 0)
-      END_OF_PAGE(fuelMap2Page, 1)
-    }
+      checkIsInTable(result, &fuelTable2, offset);
+      break;
 
     case wmiMapPage:
-    {
-      CHECK_TABLE(wmiMapPage, offset, &wmiTable, 0)
-      CHECK_TABLE(wmiMapPage, offset, &vvt2Table, 1)
-      CHECK_TABLE(wmiMapPage, offset, &dwellTable, 2)
-      END_OF_PAGE(wmiMapPage, 3)
-    }
+      checkIsInTable(result, &wmiTable, offset);
+      checkIsInTable(result, &vvt2Table, offset);
+      checkIsInTable(result, &dwellTable, offset);
+      checkIsInEmpty(result, 8U, offset);
+      break;
     
     case ignMap2Page:
-    {
-      CHECK_TABLE(ignMap2Page, offset, &ignitionTable2, 0)
-      END_OF_PAGE(ignMap2Page, 1)
-    }
+      checkIsInTable(result, &ignitionTable2, offset);
+      break;
 
     case veSetPage: 
-    {
-      CHECK_RAW(veSetPage, offset, &configPage2, sizeof(configPage2), 0)
-      END_OF_PAGE(veSetPage, 1)
-    }
+      checkIsInRaw(result, &configPage2, sizeof(configPage2), offset);
+      break;
 
     case ignSetPage: 
-    {
-      CHECK_RAW(ignSetPage, offset, &configPage4, sizeof(configPage4), 0)
-      END_OF_PAGE(ignSetPage, 1)
-    }
+      checkIsInRaw(result, &configPage4, sizeof(configPage4), offset);
+      break;
     
     case afrSetPage: 
-    {
-      CHECK_RAW(afrSetPage, offset, &configPage6, sizeof(configPage6), 0)
-      END_OF_PAGE(afrSetPage, 1)
-    }
+      checkIsInRaw(result, &configPage6, sizeof(configPage6), offset);
+      break;
 
     case canbusPage:  
-    {
-      CHECK_RAW(canbusPage, offset, &configPage9, sizeof(configPage9), 0)
-      END_OF_PAGE(canbusPage, 1)
-    }
+      checkIsInRaw(result, &configPage9, sizeof(configPage9), offset);
+      break;
 
     case warmupPage: 
-    {
-      CHECK_RAW(warmupPage, offset, &configPage10, sizeof(configPage10), 0)
-      END_OF_PAGE(warmupPage, 1)
-    }
+      checkIsInRaw(result, &configPage10, sizeof(configPage10), offset);
+      break;
 
     case progOutsPage: 
-    {
-      CHECK_RAW(progOutsPage, offset, &configPage13, sizeof(configPage13), 0)
-      END_OF_PAGE(progOutsPage, 1)
-    }
-
+      checkIsInRaw(result, &configPage13, sizeof(configPage13), offset);
+      break;
+    
     case boostvvtPage2: //Boost, VVT and staging maps (all 8x8)
-    {
-      CHECK_TABLE(boostvvtPage2, offset, &boostTableLookupDuty, 0)
-      CHECK_RAW(boostvvtPage2, offset, &configPage15, sizeof(configPage15), 1)
-      END_OF_PAGE(boostvvtPage2, 2)
-    }
+      checkIsInTable(result, &boostTableLookupDuty, offset);
+      checkIsInRaw(result, &configPage15, sizeof(configPage15), offset);
+      break;
 
     default:
-      abort(); // Unknown page number. Not a lot we can do.
+      // Nothing to do
       break;
   }
+
+  // Nothing matched, so we are at the end of the known entities for the page.
+  if (result.type==EntityType::End)
+  {
+    nextEntity(result, 0U);
+  }
+
+  return result;
+}
+
+// ========================= Set tune to empty support  ===================
+
+static void setTableRowToEmpty(table_row_iterator row)
+{
+  (void)memset(&*row, 0, row.size());
+}
+
+static void setTableValuesToEmpty(table_value_iterator it)
+{
+  while (!it.at_end())
+  {
+    setTableRowToEmpty(*it);
+    ++it;
+  }
+}
+
+static void setTableAxisToEmpty(table_axis_iterator it)
+{
+  while (!it.at_end())
+  {
+    *it = 0;
+    ++it;
+  }
+}
+
+static void setTableToEmpty(const page_iterator_t &entity)
+{
+  setTableAxisToEmpty(y_begin(entity));
+  setTableAxisToEmpty(x_begin(entity));
+  setTableValuesToEmpty(rows_begin(entity));
+}
+
+
+static void setEntityToEmpty(page_iterator_t entity) {
+  switch (entity.type)
+    {
+    case EntityType::Raw:
+        (void)memset(entity.pRaw, 0, entity.address.size);
+        break;
+
+    case EntityType::Table:
+        setTableToEmpty(entity);
+        break;
+
+    default:
+        // Do nothing
+        break;
+    }
 }
 
 
 // ====================================== External functions  ====================================
 
-uint8_t getPageCount(void)
-{
-  return _countof(ini_page_sizes);
+void __attribute__((noinline)) setTuneToEmpty(void) {
+  for (uint8_t page=MIN_PAGE_NUM; page<MAX_PAGE_NUM; ++page) {
+    page_iterator_t entity = page_begin(page);
+    while (entity.type!=EntityType::End) {
+      setEntityToEmpty(entity);
+      entity = advance(entity);
+    }
+  }
 }
 
 uint16_t getPageSize(byte pageNum)
 {
-  return pgm_read_word(&(ini_page_sizes[pageNum]));
+  page_iterator_t entity = map_page_offset_to_entity(pageNum, UINT16_MAX);
+  return entity.address.start + entity.address.size;
 }
 
-void setPageValue(byte pageNum, uint16_t offset, byte value)
+static inline uint16_t pageOffsetToEntityOffset(const page_iterator_t &entity, uint16_t pageOffset)
+{
+  return pageOffset-entity.address.start;
+}
+
+bool setPageValue(uint8_t pageNum, uint16_t offset, byte value)
 {
   page_iterator_t entity = map_page_offset_to_entity(pageNum, offset);
 
-  set_value(entity, value, offset);
+  return setEntityValue(entity, pageOffsetToEntityOffset(entity, offset), value);
 }
 
-byte getPageValue(byte pageNum, uint16_t offset)
+byte getPageValue(uint8_t pageNum, uint16_t offset)
 {
   page_iterator_t entity = map_page_offset_to_entity(pageNum, offset);
 
-  return get_value(entity, offset);
+  return getEntityValue(entity, pageOffsetToEntityOffset(entity, offset));
 }
+
+// LCOV_EXCL_START
+// No need to have coverage on simple wrappers
 
 // Support iteration over a pages entities.
-// Check for entity.type==End
-page_iterator_t page_begin(byte pageNum)
+page_iterator_t page_begin(uint8_t pageNum)
 {
   return map_page_offset_to_entity(pageNum, 0U);
 }
 
 page_iterator_t advance(const page_iterator_t &it)
 {
-    return map_page_offset_to_entity(it.page, it.start+it.size);
+    return map_page_offset_to_entity(it.location.page, it.address.start+it.address.size);
 }
 
 /**
@@ -456,7 +499,7 @@ page_iterator_t advance(const page_iterator_t &it)
  */
 table_value_iterator rows_begin(const page_iterator_t &it)
 {
-  return rows_begin(it.pData, it.table_key);
+  return rows_begin(it.pTable, it.table_key);
 }
 
 /**
@@ -464,7 +507,7 @@ table_value_iterator rows_begin(const page_iterator_t &it)
  */
 table_axis_iterator x_begin(const page_iterator_t &it)
 {
-  return x_begin(it.pData, it.table_key);
+  return x_begin(it.pTable, it.table_key);
 }
 
 /**
@@ -472,7 +515,7 @@ table_axis_iterator x_begin(const page_iterator_t &it)
  */
 table_axis_iterator x_rbegin(const page_iterator_t &it)
 {
-  return x_rbegin(it.pData, it.table_key);
+  return x_rbegin(it.pTable, it.table_key);
 }
 
 /**
@@ -480,5 +523,11 @@ table_axis_iterator x_rbegin(const page_iterator_t &it)
  */
 table_axis_iterator y_begin(const page_iterator_t &it)
 {
-  return y_begin(it.pData, it.table_key);
+  return y_begin(it.pTable, it.table_key);
 }
+
+// LCOV_EXCL_STOP
+
+#if defined(CORE_AVR)
+#pragma GCC pop_options
+#endif

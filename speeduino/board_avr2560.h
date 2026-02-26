@@ -4,6 +4,7 @@
 
 #define CORE_AVR
 
+#include <stdint.h>
 #include <avr/interrupt.h>
 #include <avr/io.h>
 
@@ -26,22 +27,25 @@
 #endif
 
 #define COMPARE_TYPE uint16_t
-#define SERIAL_BUFFER_SIZE (256+7+1) //Size of the serial buffer used by new comms protocol. The largest single packet is the O2 calibration which is 256 bytes + 7 bytes of overhead
+#define TS_SERIAL_BUFFER_SIZE (256+7+1) //Size of the serial buffer used by new comms protocol. The largest single packet is the O2 calibration which is 256 bytes + 7 bytes of overhead
 #define FPU_MAX_SIZE 0 //Size of the FPU buffer. 0 means no FPU.
 #ifdef USE_SPI_EEPROM
   #define EEPROM_LIB_H "src/SPIAsEEPROM/SPIAsEEPROM.h"
-  typedef uint16_t eeprom_address_t;
+  class SPI_EEPROM_Class;
+  using EEPROM_t = SPI_EEPROM_Class;
 #else
   #define EEPROM_LIB_H <EEPROM.h>
-  typedef int eeprom_address_t;
+  class EEPROMClass;
+  using EEPROM_t = EEPROMClass;
 #endif
 #ifdef PLATFORMIO
   #define RTC_LIB_H <TimeLib.h>
 #else
   #define RTC_LIB_H <Time.h>
 #endif
-
-#define pinIsReserved(pin)  ( ((pin) == 0) ) //Forbidden pins like USB on other boards
+constexpr uint16_t BLOCKING_FACTOR = 121;
+constexpr uint16_t TABLE_BLOCKING_FACTOR = 64;
+static inline bool pinIsReserved(uint8_t pin) { return pin==0U; } //Forbidden pins like USB on other boards
 
 /*
 ***********************************************************************************************************
@@ -123,7 +127,7 @@ static inline void IGN7_TIMER_DISABLE(void) { TIMSK3 &= ~(1 << OCIE3C); } //Repl
 static inline void IGN8_TIMER_DISABLE(void) { TIMSK3 &= ~(1 << OCIE3B); } //Replaces injector 2
 
 #define MAX_TIMER_PERIOD 262140UL //The longest period of time (in uS) that the timer can permit (IN this case it is 65535 * 4, as each timer tick is 4uS)
-#define uS_TO_TIMER_COMPARE(uS1) ((uS1) >> 2) //Converts a given number of uS into the required number of timer ticks until that time has passed
+#define uS_TO_TIMER_COMPARE(uS1) (COMPARE_TYPE)((uS1) >> 2U) //Converts a given number of uS into the required number of timer ticks until that time has passed
 
 /*
 ***********************************************************************************************************

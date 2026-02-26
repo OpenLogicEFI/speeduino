@@ -12,20 +12,33 @@
 */
 bool pinIsSerial(uint8_t);
 #define COMPARE_TYPE uint16_t
-#define SERIAL_BUFFER_SIZE 517 //Size of the serial buffer used by new comms protocol. For SD transfers this must be at least 512 + 1 (flag) + 4 (sector)
+#define TS_SERIAL_BUFFER_SIZE 517 //Size of the serial buffer used by new comms protocol. For SD transfers this must be at least 512 + 1 (flag) + 4 (sector)
 #define FPU_MAX_SIZE 32 //Size of the FPU buffer. 0 means no FPU.
 #define BOARD_MAX_DIGITAL_PINS 54
 #define BOARD_MAX_IO_PINS 54
 #define BOARD_MAX_ADC_PINS  17 //Number of analog pins
 #define EEPROM_LIB_H <EEPROM.h>
-typedef int eeprom_address_t;
+class EEPROMClass;
+using EEPROM_t = EEPROMClass;
 #define RTC_ENABLED
 #define SD_LOGGING //SD logging enabled by default for Teensy 4.1 as it has the slot built in
 #define RTC_LIB_H "TimeLib.h"
 #define SD_CONFIG  SdioConfig(FIFO_SDIO) //Set Teensy to use SDIO in FIFO mode. This is the fastest SD mode on Teensy as it offloads most of the writes
+constexpr uint16_t BLOCKING_FACTOR = 251;
+constexpr uint16_t TABLE_BLOCKING_FACTOR = 256;
 
 //#define PWM_FAN_AVAILABLE
-#define pinIsReserved(pin)  ( ((pin) == 0) || ((pin) == 42) || ((pin) == 43) || ((pin) == 44) || ((pin) == 45) || ((pin) == 46) || ((pin) == 47) || pinIsSerial((pin)) ) //Forbidden pins like USB
+static inline bool pinIsReserved(uint8_t pin) { 
+  return (pin == 0U) 
+      || (pin == 42U) 
+      || (pin == 43U) 
+      || (pin == 44U) 
+      || (pin == 45U) 
+      || (pin == 46U) 
+      || (pin == 47U) 
+      || pinIsSerial(pin) 
+  ;
+}
 
 #define INJ_CHANNELS 8
 #define IGN_CHANNELS 8
@@ -121,23 +134,23 @@ static inline void IGN8_TIMER_DISABLE(void)  {TMR4_CSCTRL3 &= ~TMR_CSCTRL_TCF1EN
 #if F_CPU == 600000000  
   //Bus Clock is 150Mhz @ 600 Mhz CPU.
   #define MAX_TIMER_PERIOD 55923UL //Time per tick = 0.8533333
-  #define uS_TO_TIMER_COMPARE(uS) (((uS) * 75UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
+  #define uS_TO_TIMER_COMPARE(uS) (COMPARE_TYPE)(((uS) * 75UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
 #elif F_CPU == 528000000
   //Bus Clock is 132Mhz @ 528 Mhz CPU.
   #define MAX_TIMER_PERIOD 63549UL //Time per tick = 0.96969696
-  #define uS_TO_TIMER_COMPARE(uS) (((uS) * 66UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
+  #define uS_TO_TIMER_COMPARE(uS) (COMPARE_TYPE)(((uS) * 66UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
 #elif F_CPU == 450000000
   //Bus Clock is 150Mhz @ 450 Mhz CPU.
   #define MAX_TIMER_PERIOD 55923UL //Time per tick = 0.8533333
-  #define uS_TO_TIMER_COMPARE(uS) (((uS) * 75UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
+  #define uS_TO_TIMER_COMPARE(uS) (COMPARE_TYPE)(((uS) * 75UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
 #elif F_CPU == 396000000
   //Bus Clock is 132Mhz @ 396 Mhz CPU.
   #define MAX_TIMER_PERIOD 63549UL //Time per tick = 0.96969696
-  #define uS_TO_TIMER_COMPARE(uS) (((uS) * 66UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
+  #define uS_TO_TIMER_COMPARE(uS) (COMPARE_TYPE)(((uS) * 66UL) >> 6) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
 #elif F_CPU == 150000000
   //Bus Clock is 75Mhz @ 150 Mhz CPU.
   #define MAX_TIMER_PERIOD 111846UL //Time per tick = 1.706666
-  #define uS_TO_TIMER_COMPARE(uS) (((uS) * 75UL) >> 7) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
+  #define uS_TO_TIMER_COMPARE(uS) (COMPARE_TYPE)(((uS) * 75UL) >> 7) //Converts a given number of uS into the required number of timer ticks until that time has passed. 
 #else
   #error Unsupported CPU frequency. 
 #endif

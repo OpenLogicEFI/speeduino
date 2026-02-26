@@ -11,7 +11,7 @@
 * General
 */
 #define COMPARE_TYPE uint16_t
-#define SERIAL_BUFFER_SIZE 517 //Size of the serial buffer used by new comms protocol. For SD transfers this must be at least 512 + 1 (flag) + 4 (sector)
+#define TS_SERIAL_BUFFER_SIZE 517 //Size of the serial buffer used by new comms protocol. For SD transfers this must be at least 512 + 1 (flag) + 4 (sector)
 #define FPU_MAX_SIZE 32 //Size of the FPU buffer. 0 means no FPU.
 #define SD_LOGGING //SD logging enabled by default for Teensy 3.5 as it has the slot built in
 #define BOARD_MAX_DIGITAL_PINS 57
@@ -19,18 +19,27 @@
 #define BOARD_MAX_ADC_PINS  26 //Number of analog pins
 #ifdef USE_SPI_EEPROM
   #define EEPROM_LIB_H "src/SPIAsEEPROM/SPIAsEEPROM.h"
-  typedef uint16_t eeprom_address_t;
+  class SPI_EEPROM_Class;
+  using EEPROM_t = SPI_EEPROM_Class;
 #else
   #define EEPROM_LIB_H <EEPROM.h>
-  typedef int eeprom_address_t;
+  class EEPROMClass;
+  using EEPROM_t = EEPROMClass;
 #endif
 #define RTC_ENABLED
 #define RTC_LIB_H "TimeLib.h"
 #define SD_CONFIG  SdioConfig(FIFO_SDIO) //Set Teensy to use SDIO in FIFO mode. This is the fastest SD mode on Teensy as it offloads most of the writes
+constexpr uint16_t BLOCKING_FACTOR = 251;
+constexpr uint16_t TABLE_BLOCKING_FACTOR = 256;
 
 #define PWM_FAN_AVAILABLE
-#define pinIsReserved(pin)  ( ((pin) == 0) || ((pin) == 1) || ((pin) == 3) || ((pin) == 4) ) //Forbidden pins like USB
-
+static inline bool pinIsReserved(uint8_t pin) { 
+  return (pin == 0U) 
+      || (pin == 1U) 
+      || (pin == 3U) 
+      || (pin == 4U) 
+  ;
+}
 #define INJ_CHANNELS 8
 #define IGN_CHANNELS 8
 
@@ -112,7 +121,7 @@ static inline void IGN7_TIMER_DISABLE(void)  {FTM3_C6SC &= ~FTM_CSC_CHIE;}
 static inline void IGN8_TIMER_DISABLE(void)  {FTM3_C7SC &= ~FTM_CSC_CHIE;}
 
 #define MAX_TIMER_PERIOD 139808UL // 2.13333333uS * 65535
-#define uS_TO_TIMER_COMPARE(uS) (((uS) * 15) >> 5) //Converts a given number of uS into the required number of timer ticks until that time has passed.
+#define uS_TO_TIMER_COMPARE(uS) (COMPARE_TYPE)(((uS) * 15U) >> 5U) //Converts a given number of uS into the required number of timer ticks until that time has passed.
 
 /*
 ***********************************************************************************************************

@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include "bit_manip.h"
 #include "atomic.h"
+#include "maths.h"
 
 using byte = uint8_t;
 
@@ -21,9 +22,6 @@ using byte = uint8_t;
 * unit based values in similar variable(s) without ADC part in name (see sensors.ino for reading of sensors).
 */
 struct statuses {
-  // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
-  volatile bool hasSync : 1; /**< Flag for crank/cam position being known by decoders (See decoders.ino).
-  This is used for sanity checking e.g. before logging tooth history or reading some sensors and computing readings. */
   // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
   bool initialisationComplete : 1; ///< Tracks whether the setup() function has run completely
   // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
@@ -116,9 +114,6 @@ struct statuses {
   bool softLimitActive : 1; ///< Soft limit status: true == on, false == off 
   // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
   bool idleOn : 1; ///< Is the idle code active : true == active, false == inactive
-  // TODO: resolve duplication with hasSync
-  // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
-  volatile bool hasFullSync : 1; // Whether engine has sync (true) or not (false)
 
   // Status3 fields as defined in the INI.   
   // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
@@ -130,9 +125,6 @@ struct statuses {
   bool secondFuelTableActive : 1; ///< Secondary fuel table is use (true) or not (false)
   // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
   bool vssUiRefresh : 1; ///< Flag to indicate that the VSS value needs to be refreshed in the UI 
-  // TODO: resolve duplication with hasSync & hasFullSync
-  // cppcheck-suppress misra-c2012-6.1 ; False positive - MISRA C:2012 Rule (R 6.1) permits the use of boolean for bit fields.
-  volatile bool halfSync : 1;  ///< 
   // TODO: resolve duplication with nSquirts
   unsigned int nSquirtsStatus: 3; ///< 
 
@@ -291,22 +283,21 @@ struct statuses {
   bool airconFanOn : 1;  ///< Indicates whether the A/C fan is running
   
   uint8_t systemTemp;
+  uint32_t revolutionTime; //The time in uS that one revolution would take at current speed (The time tooth 1 was last seen, minus the time it was seen prior to that)
+
+  uint8_t maxIgnOutputs = 1; /**< Number of ignition outputs being used by the current tune configuration */
+  uint8_t maxInjOutputs = 1; /**< Number of injection outputs being used by the current tune configuration */
+  /** @brief Fuel and ignition scheduler cut state. @see calculateFuelIgnitionChannelCut */
+  struct scheduler_cut_t
+  {
+    // Using bytes for compactness ATM, but that limits us to 8 fuel and 
+    // 8 ignition channels
+    byte ignitionChannelsPending; ///< Any ignition channels that are pending injections before they are resumed
+    byte ignitionChannels; ///< Which ignition channels are on (1) or off (0)
+    byte fuelChannels; ///< Which fuel channels are on (1) or off (0)
+  };
+  scheduler_cut_t schedulerCutState;
 };
-
-/**
- * @brief Non-atomic version of HasAnySync. **Should only be called in an ATOMIC() block***
- * 
- */
-static inline bool HasAnySyncUnsafe(const statuses &status) {
-  return status.hasSync || status.halfSync;
-}
-
-static inline bool HasAnySync(const statuses &status) {
-  ATOMIC() {
-    return HasAnySyncUnsafe(status);
-  }
-  return false; // Just here to avoid compiler warning.
-}
 
 static inline bool isEngineProtectActive(const statuses &status) {
   return status.engineProtectRpm
@@ -323,4 +314,21 @@ static inline void resetEngineProtect(statuses &status) {
   status.engineProtectAfr = false;
   status.engineProtectClt = false;
   status.engineProtectIoError = false;
+}
+
+
+/**
+ * @brief Set the RPM field, keeping RPMDiv100 in sync.
+ * 
+ * @param status 
+ * @param smallRpm 
+ */
+static inline void setRpm(statuses &status, uint16_t rpm)
+{
+  ATOMIC()
+  {
+    status.RPM = rpm;
+    status.RPMdiv100 = div100(rpm);
+    status.longRPM = rpm;
+  }
 }

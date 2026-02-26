@@ -20,10 +20,6 @@ Timers are typically low resolution (Compared to Schedulers), with maximum frequ
 #include "comms.h"
 #include "maths.h"
 
-#if defined(CORE_AVR)
-  #include <avr/wdt.h>
-#endif
-
 volatile uint16_t lastRPM_100ms; //Need to record this for rpmDOT calculation
 volatile byte loop5ms;
 volatile byte loop20ms;
@@ -42,10 +38,6 @@ volatile uint16_t tachoSweepAccum;
 volatile uint8_t testInjectorPulseCount = 0;
 volatile uint8_t testIgnitionPulseCount = 0;
 
-#if defined (CORE_TEENSY)
-  IntervalTimer lowResTimer;
-#endif
-
 void initialiseTimers(void)
 {
   lastRPM_100ms = 0;
@@ -61,19 +53,12 @@ void initialiseTimers(void)
 
 static inline void applyOverDwellCheck(IgnitionSchedule &schedule, uint32_t targetOverdwellTime) {
   //Check first whether each spark output is currently on. Only check it's dwell time if it is
-  if ((schedule.Status == RUNNING) && (schedule.startTime < targetOverdwellTime)) { 
+  if ((isRunning(schedule)) && (schedule.startTime < targetOverdwellTime)) { 
     schedule.pEndCallback(); schedule.Status = OFF; 
   }
 }
 
-//Timer2 Overflow Interrupt Vector, called when the timer overflows.
-//Executes every ~1ms.
-#if defined(CORE_AVR) //AVR chips use the ISR for this
-//This MUST be no block. Turning NO_BLOCK off messes with timing accuracy. 
-ISR(TIMER2_OVF_vect, ISR_NOBLOCK) //cppcheck-suppress misra-c2012-8.2
-#else
-void oneMSInterval(void) //Most ARM chips can simply call a function
-#endif
+void oneMSInterval(void)
 {
   BIT_SET(TIMER_mask, BIT_TIMER_1KHZ);
   ms_counter++;
@@ -333,7 +318,7 @@ void oneMSInterval(void) //Most ARM chips can simply call a function
 
       //Continental flex sensor fuel temperature can be read with following formula: (Temperature = (41.25 * pulse width(ms)) - 81.25). 1000μs = -40C and 5000μs = 125C
       flexPulseWidth = constrain(flexPulseWidth, 1000UL, 5000UL);
-      int32_t tempX100 = (int32_t)rshift<10>(4224UL * flexPulseWidth) - 8125L; //Split up for MISRA compliance
+      int32_t tempX100 = (int32_t)rshift<10>((uint32_t)(4224UL * flexPulseWidth)) - 8125L; //Split up for MISRA compliance
       currentStatus.fuelTemp = div100((int16_t)tempX100);     
     }
   }

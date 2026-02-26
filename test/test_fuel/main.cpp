@@ -1,14 +1,26 @@
-#include "../device_test_harness.h"
+#include "../test_harness_device.h"
+#include "../test_harness_native.h"
+
 
 void runAllFuelTests(void)
 {
     extern void testCorrections(void);
-    extern void testPW(void);
-    extern void testStaging(void );
+    extern void testComputePulseWidths(void);
+    extern void testPwApplyNitrous(void);
+    extern void testCalculateRequiredFuel(void);
+    extern void testApplyPwLimit(void);
+    extern void testCalculateSecondaryPw(void);
+    extern void testApplyPwToInjectorChannels(void);
+    extern void testCalculateOpenTime(void);
 
     testCorrections();
-    testPW();
-    testStaging();
+    testComputePulseWidths();
+    testPwApplyNitrous();
+    testCalculateRequiredFuel();
+    testApplyPwLimit();
+    testCalculateSecondaryPw();
+    testApplyPwToInjectorChannels();
+    testCalculateOpenTime();
 }
 
-DEVICE_TEST(runAllFuelTests)
+TEST_HARNESS(runAllFuelTests)

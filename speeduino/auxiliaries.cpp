@@ -9,7 +9,7 @@ A full copy of the license may be found in the projects root directory
 #include "src/PID_v1/PID_v1.h"
 #include "decoders.h"
 #include "timers.h"
-#include "utilities.h"
+#include "preprocessor.h"
 #include "units.h"
 
 static long vvt1_pwm_value;
@@ -55,7 +55,7 @@ uint16_t fan_pwm_max_count; //Used for variable PWM frequency
 volatile unsigned int fan_pwm_cur_value;
 long fan_pwm_value;
 #endif
-static table2D_u8_u8_4 fanPWMTable(&configPage6.fanPWMBins, &configPage9.PWMFanDuty);
+constexpr table2D_u8_u8_4 fanPWMTable(&configPage6.fanPWMBins, &configPage9.PWMFanDuty);
 
 bool acIsEnabled;
 bool acStandAloneFanIsEnabled;
@@ -74,7 +74,7 @@ bool vvtIsHot;
 bool vvtTimeHold;
 uint16_t vvt_pwm_max_count; //Used for variable PWM frequency
 uint16_t boost_pwm_max_count; //Used for variable PWM frequency
-static table2D_u8_s16_6 flexBoostTable(&configPage10.flexBoostBins, &configPage10.flexBoostAdj);
+constexpr table2D_u8_s16_6 flexBoostTable(&configPage10.flexBoostBins, &configPage10.flexBoostAdj);
 
 //Old PID method. Retained in case the new one has issues
 //integerPID boostPID(&MAPx100, &boost_pwm_target_value, &boostTargetx100, configPage6.boostKP, configPage6.boostKI, configPage6.boostKD, DIRECT);
@@ -687,7 +687,7 @@ void boostControl(void)
     if(configPage4.boostType == OPEN_LOOP_BOOST)
     {
       //Open loop
-      if ( (configPage9.boostByGearEnabled > 0) && (configPage2.vssMode > 1) ){ boostByGear(); }
+      if ( (configPage9.boostByGearEnabled > 0) && isExternalVssMode(configPage2) ){ boostByGear(); }
       else{ currentStatus.boostDuty = get3DTableValue(&boostTable, (currentStatus.TPS * 2U), currentStatus.RPM) * 2 * 100; }
 
       if(currentStatus.boostDuty > 10000) { currentStatus.boostDuty = 10000; } //Safety check
@@ -701,7 +701,7 @@ void boostControl(void)
     {
       if( (boostCounter & 7) == 1) 
       { 
-        if ( (configPage9.boostByGearEnabled > 0) && (configPage2.vssMode > 1) ){ boostByGear(); }
+        if ( (configPage9.boostByGearEnabled > 0) && isExternalVssMode(configPage2) ){ boostByGear(); }
         else{ currentStatus.boostTarget = get3DTableValue(&boostTable, (currentStatus.TPS * 2U), currentStatus.RPM) << 1; } //Boost target table is in kpa and divided by 2
 
         //If flex fuel is enabled, there can be an adder to the boost target based on ethanol content
@@ -1107,11 +1107,7 @@ void boostDisable(void)
 }
 
 //The interrupt to control the Boost PWM
-#if defined(CORE_AVR)
-  ISR(TIMER1_COMPA_vect) //cppcheck-suppress misra-c2012-8.2
-#else
-  void boostInterrupt(void) //Most ARM chips can simply call a function
-#endif
+void boostInterrupt(void)
 {
   if (boost_pwm_state == true)
   {
@@ -1137,11 +1133,7 @@ void boostDisable(void)
 }
 
 //The interrupt to control the VVT PWM
-#if defined(CORE_AVR)
-  ISR(TIMER1_COMPB_vect) //cppcheck-suppress misra-c2012-8.2
-#else
-  void vvtInterrupt(void) //Most ARM chips can simply call a function
-#endif
+void vvtInterrupt(void)
 {
   if ( ((vvt1_pwm_state == false) || (vvt1_max_pwm == true)) && ((vvt2_pwm_state == false) || (vvt2_max_pwm == true)) )
   {

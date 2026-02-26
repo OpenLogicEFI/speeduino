@@ -37,9 +37,11 @@
 * General
 */
 #define COMPARE_TYPE uint16_t
-#define SERIAL_BUFFER_SIZE 517 //Size of the serial buffer used by new comms protocol. For SD transfers this must be at least 512 + 1 (flag) + 4 (sector)
+#define TS_SERIAL_BUFFER_SIZE 517 //Size of the serial buffer used by new comms protocol. For SD transfers this must be at least 512 + 1 (flag) + 4 (sector)
 #define FPU_MAX_SIZE 32 //Size of the FPU buffer. 0 means no FPU.
 #define TIMER_RESOLUTION 4
+constexpr uint16_t BLOCKING_FACTOR = 121;
+constexpr uint16_t TABLE_BLOCKING_FACTOR = 64;
 
 //Select one for EEPROM,the default is EEPROM emulation on internal flash.
 //#define SRAM_AS_EEPROM /*Use 4K battery backed SRAM, requires a 3V continuous source (like battery) connected to Vbat pin */
@@ -106,7 +108,13 @@ extern STM32RTC& rtc;
 
 #if defined(ARDUINO_BLUEPILL_F103C8) || defined(ARDUINO_BLUEPILL_F103CB) \
  || defined(ARDUINO_BLACKPILL_F401CC) || defined(ARDUINO_BLACKPILL_F411CE)
-  #define pinIsReserved(pin)  ( ((pin) == PA11) || ((pin) == PA12) || ((pin) == PC14) || ((pin) == PC15) )
+  static inline bool pinIsReserved(uint8_t pin) { 
+    return (pin == (uint8_t)PA11) 
+        || (pin == (uint8_t)PA12) 
+        || (pin == (uint8_t)PC14) 
+        || (pin == (uint8_t)PC15)
+      ;
+  }
 
   #ifndef PB11 //Hack for F4 BlackPills
     #define PB11 PB10
@@ -122,9 +130,24 @@ extern STM32RTC& rtc;
   #endif
 #else
   #ifdef USE_SPI_EEPROM
-    #define pinIsReserved(pin)  ( ((pin) == PA11) || ((pin) == PA12) || ((pin) == PB3) || ((pin) == PB4) || ((pin) == PB5) || ((pin) == USE_SPI_EEPROM) ) //Forbidden pins like USB
+    static inline bool pinIsReserved(uint8_t pin) { 
+      return (pin == (uint8_t)PA11) 
+          || (pin == (uint8_t)PA12) 
+          || (pin == (uint8_t)PB3) 
+          || (pin == (uint8_t)PB4)
+          || (pin == (uint8_t)USE_SPI_EEPROM)
+        ;
+    }
   #else
-    #define pinIsReserved(pin)  ( ((pin) == PA11) || ((pin) == PA12) || ((pin) == PB3) || ((pin) == PB4) || ((pin) == PB5) || ((pin) == PB0) ) //Forbidden pins like USB
+    static inline bool pinIsReserved(uint8_t pin) { 
+      return (pin == (uint8_t)PA11) 
+          || (pin == (uint8_t)PA12)
+          || (pin == (uint8_t)PB3) 
+          || (pin == (uint8_t)PB4)
+          || (pin == (uint8_t)PB5)
+          || (pin == (uint8_t)PB0)
+         ;
+    }
   #endif
 #endif
 
@@ -140,37 +163,21 @@ extern STM32RTC& rtc;
 * EEPROM emulation
 */
 #if defined(SRAM_AS_EEPROM)
-    #define EEPROM_LIB_H "src/BackupSram/BackupSramAsEEPROM.h"
-    typedef uint16_t eeprom_address_t;
-    #include EEPROM_LIB_H
-    extern BackupSramAsEEPROM EEPROM;
-
+  #define EEPROM_LIB_H "src/BackupSram/BackupSramAsEEPROM.h"
+  class BackupSramAsEEPROM;
+  using EEPROM_t = BackupSramAsEEPROM;    
 #elif defined(USE_SPI_EEPROM)
-    #define EEPROM_LIB_H "src/SPIAsEEPROM/SPIAsEEPROM.h"
-    typedef uint16_t eeprom_address_t;
-    #include EEPROM_LIB_H
-    extern SPIClass SPI_for_flash; //SPI1_MOSI, SPI1_MISO, SPI1_SCK
- 
-    //windbond W25Q16 SPI flash EEPROM emulation
-    extern EEPROM_Emulation_Config EmulatedEEPROMMconfig;
-    extern Flash_SPI_Config SPIconfig;
-    extern SPI_EEPROM_Class EEPROM;
-
+  #define EEPROM_LIB_H "src/SPIAsEEPROM/SPIAsEEPROM.h"
+  class SPI_EEPROM_Class;
+  using EEPROM_t = SPI_EEPROM_Class;    
 #elif defined(FRAM_AS_EEPROM) //https://github.com/VitorBoss/FRAM
-    #define EEPROM_LIB_H "src/FRAM/Fram.h"
-    typedef uint16_t eeprom_address_t;
-    #include EEPROM_LIB_H
-    #if defined(STM32F407xx)
-      extern FramClass EEPROM; /*(mosi, miso, sclk, ssel, clockspeed) 31/01/2020*/
-    #else
-      extern FramClass EEPROM; //Blue/Black Pills
-    #endif
-
+  #define EEPROM_LIB_H "src/FRAM/Fram.h"
+  class FramClass;
+  using EEPROM_t = FramClass;    
 #else //default case, internal flash as EEPROM
   #define EEPROM_LIB_H "src/SPIAsEEPROM/SPIAsEEPROM.h"
-  typedef uint16_t eeprom_address_t;
-  #include EEPROM_LIB_H
-    extern InternalSTM32F4_EEPROM_Class EEPROM;
+  class InternalSTM32F4_EEPROM_Class;
+  using EEPROM_t = InternalSTM32F4_EEPROM_Class;    
   #if defined(STM32F401xC)
     #define SMALL_FLASH_MODE
   #endif
@@ -196,7 +203,7 @@ extern STM32RTC& rtc;
 * 4 - IDLE  |4 - IGN4  |4 - INJ4  |4 - IGN8  |4 - INJ8  | 
 */
 #define MAX_TIMER_PERIOD 262140UL //The longest period of time (in uS) that the timer can permit (IN this case it is 65535 * 4, as each timer tick is 4uS)
-#define uS_TO_TIMER_COMPARE(uS1) ((uS1) >> 2) //Converts a given number of uS into the required number of timer ticks until that time has passed
+#define uS_TO_TIMER_COMPARE(uS1) (COMPARE_TYPE)((uS1) >> 2U) //Converts a given number of uS into the required number of timer ticks until that time has passed
 
 #if defined(STM32F407xx) //F407 can do 8x8 STM32F401/STM32F411 don't
   #define INJ_CHANNELS 8
