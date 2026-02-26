@@ -1,8 +1,8 @@
-name: Sync release branch to latest Speeduino tag
+name: Sync from upstream
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # every 6 hours
+    - cron: "0 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -11,32 +11,31 @@ permissions:
 jobs:
   sync:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout fork
         uses: actions/checkout@v4
         with:
-          # Use your PAT that has workflow perms
-          token: ${{ secrets.RELEASE_SYNC_TOKEN }}
+          fetch-depth: 0
+          persist-credentials: true
 
-      - name: Add upstream and fetch tags
+      - name: Configure git identity
         run: |
-          git remote add upstream https://github.com/speeduino/speeduino.git
-          git fetch upstream --tags
-
-      - name: Point release branch at latest tag
-        run: |
-          # Find *highest* numeric tag (e.g. 202501.6 > 202501)
-          # All Speeduino releases start with "20", so filter that.
-          LATEST_TAG=$(git tag -l '20*' --sort=version:refname | tail -n 1)
-          echo "Latest upstream tag is: $LATEST_TAG"
-
-          # Create/update branch 'release' at that tag
-          git checkout -B release "$LATEST_TAG"
-
-          # Identity for the push
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Push to your fork
-          git push origin release --force
+      - name: Add upstream and fetch
+        run: |
+          git remote add upstream https://github.com/UPSTREAM_OWNER/UPSTREAM_REPO.git
+          git fetch upstream
+
+      - name: Merge upstream into main
+        run: |
+          git checkout main
+          git merge upstream/main --no-edit || {
+            echo "Merge failed (conflicts/unrelated histories)."
+            exit 0
+          }
+
+      - name: Push back to fork
+        run: |
+          git push origin main
