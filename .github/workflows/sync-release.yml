@@ -1,4 +1,4 @@
-name: Sync from upstream (master + release-ish)
+name: Sync from upstream (Speeduino)
 
 on:
   schedule:
@@ -12,61 +12,35 @@ jobs:
   sync:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        branch: [master, release]
+
     steps:
-      - name: Checkout fork
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Configure git identity
+      - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Add upstream + fetch
+      - name: Add upstream
         run: |
-          git remote add upstream https://github.com/UPSTREAM_OWNER/UPSTREAM_REPO.git
+          git remote add upstream https://github.com/speeduino/speeduino.git
           git fetch upstream --prune
 
-      - name: Detect release branch
-        id: detect
-        shell: bash
+      - name: Sync branch
         run: |
-          # List upstream branches
-          git branch -r | sed 's/^[ *]*//' | sort
+          BR=${{ matrix.branch }}
 
-          # Heuristics: pick the first matching branch name.
-          # Tweak these patterns to match your upstream's naming style.
-          RELEASE_REF="$(git branch -r \
-            | sed 's/^[ *]*//' \
-            | grep -E '^upstream/(release($|[-/])|releases/|maintenance/|stable($|[-/]))' \
-            | head -n 1 || true)"
-
-          if [ -z "$RELEASE_REF" ]; then
-            echo "No release-like upstream branch found."
-            echo "release_branch=" >> "$GITHUB_OUTPUT"
+          if ! git show-ref --verify --quiet refs/remotes/upstream/$BR; then
+            echo "Upstream branch $BR not found, skipping."
             exit 0
           fi
 
-          RELEASE_BRANCH="${RELEASE_REF#upstream/}"
-          echo "Found release-like branch: $RELEASE_BRANCH"
-          echo "release_branch=$RELEASE_BRANCH" >> "$GITHUB_OUTPUT"
-
-      - name: Sync master
-        run: |
-          git checkout master || git checkout -b master upstream/master
-          git merge upstream/master --no-edit || { echo "master merge failed; skipping push"; exit 0; }
-          git push origin master
-
-      - name: Sync detected release branch (if found)
-        if: steps.detect.outputs.release_branch != ''
-        run: |
-          BR="${{ steps.detect.outputs.release_branch }}"
-          echo "Syncing branch: $BR"
-
-          # Create local branch if needed
-          git checkout "$BR" 2>/dev/null || git checkout -b "$BR" "upstream/$BR"
-
-          git merge "upstream/$BR" --no-edit || { echo "$BR merge failed; skipping push"; exit 0; }
-          git push origin "$BR"
+          git checkout $BR || git checkout -b $BR upstream/$BR
+          git merge upstream/$BR --no-edit || { echo "Merge conflict, skipping."; exit 0; }
+          git push origin $BR
