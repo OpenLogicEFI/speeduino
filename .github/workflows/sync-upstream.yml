@@ -50,8 +50,9 @@ jobs:
           # Keep OpenLogicEFI custom files from this fork
           git checkout "$OUR_SHA" -- platformio.ini || true
           git checkout "$OUR_SHA" -- platformio_openlogicefi.ini || true
-          git checkout "$OUR_SHA" -- speeduino/reference/openlogicefi || true
+          git checkout "$OUR_SHA" -- reference/openlogicefi || true
           git checkout "$OUR_SHA" -- speeduino/variants || true
+          git checkout "$OUR_SHA" -- variants || true
           git checkout "$OUR_SHA" -- .github/workflows/sync-upstream.yml || true
 
           if git diff --quiet HEAD && git diff --cached --quiet; then
