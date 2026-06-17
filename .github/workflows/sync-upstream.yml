@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        branch: [master, release]
+        branch: [master]
 
     steps:
       - uses: actions/checkout@v4
