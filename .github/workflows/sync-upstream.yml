@@ -1,0 +1,65 @@
+name: Sync from upstream Speeduino
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: [master, release]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync branch
+        run: |
+          set -e
+
+          BR="${{ matrix.branch }}"
+
+          git remote add upstream https://github.com/speeduino/speeduino.git
+          git fetch origin --prune
+          git fetch upstream --prune
+
+          git checkout -B "$BR" "origin/$BR"
+
+          OUR_SHA=$(git rev-parse HEAD)
+
+          git merge --no-commit --no-ff "upstream/$BR" || {
+            echo "Merge conflict on $BR. Aborting."
+            git merge --abort
+            exit 1
+          }
+
+          # Keep OpenLogicEFI custom files from this fork
+          git checkout "$OUR_SHA" -- platformio.ini || true
+          git checkout "$OUR_SHA" -- platformio_openlogicefi.ini || true
+          git checkout "$OUR_SHA" -- speeduino/reference/openlogicefi || true
+          git checkout "$OUR_SHA" -- speeduino/variants || true
+          git checkout "$OUR_SHA" -- .github/workflows/sync-upstream.yml || true
+
+          if git diff --quiet HEAD && git diff --cached --quiet; then
+            echo "No upstream changes to sync."
+            git merge --abort || true
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "Sync $BR from upstream Speeduino"
+          git push origin "$BR"
