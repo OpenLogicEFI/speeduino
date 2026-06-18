@@ -67,29 +67,29 @@ const PinName digitalPin[] = {
   PB_15,  // D22
   PB_14,  // D23
   PB_13,  // D24
-  PB_10,  // D25 (parallel)
+  PB_10,  // D25 alias of D16 / PB10
   PB_12,  // D26
-  PE_15,  // D27 (parallel)
-  PB_7,   // D28
+  PE_15,  // D27
+  PD_7,   // D28
   PE_14,  // D29
   PE_13,  // D30
-  PB_11,  // D31 (parallel)
-  PB_8,   // D32
-  PB_9,   // D33
-  PE_0,   // D34
-  PE_2,   // D35
-  PE_3,   // D36
-  PE_4,   // D37
+  PB_11,  // D31 alias of D17 / PB11
+  PB_6,   // D32
+  PB_7,   // D33
+  PB_8,   // D34
+  PB_9,   // D35
+  PE_0,   // D36
+  PA_15,  // D37
   PE_12,  // D38
-  PE_4,   // D39 (parallel)
-  PA_15,  // D40
-  PE_5,   // D41
-  PE_4,   // D42 (parallel)
-  PE_5,   // D43 (parallel)
-  PE_6,   // D44
-  PD_7,   // D45
-  PE_6,   // D46 (parallel)
-  PB_6,   // D47
+  PE_1,   // D39
+  PB_5,   // D40
+  PE_2,   // D41
+  PE_3,   // D42
+  PE_4,   // D43
+  PE_5,   // D44
+  PB_4,   // D45
+  PE_6,   // D46
+  PB_3,   // D47
   PE_10,  // D48
   PE_11,  // D49
   PE_9,   // D50
@@ -119,8 +119,8 @@ const PinName digitalPin[] = {
   PA_11,  // D70 USB_DP
   PA_12,  // D71 USB_DM
   PE_1,   // D72 SPI-Flash CS
-  PB_4,   // D73 SPI1 MOSI
-  PB_5,   // D74 SPI1 MISO
+  PB_4,   // D73 SPI1 MISO
+  PB_5,   // D74 SPI1 MOSI
   PB_3,   // D75 SPI1 CLK
   PD_0,   // D76 CAN RX
   PD_1,   // D77 CAN TX

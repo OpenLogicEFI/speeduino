@@ -45,29 +45,29 @@
 #define PB15                     22  // D22
 #define PB14                     23  // D23
 #define PB13                     24  // D24
-#define PB10_D25                 25  // D25 (parallel to PB10 / D16)
+#define PB10_D25                 25  // D25 alias of D16 / PB10
 #define PB12                     26  // D26
-#define PE15                     27  // D27 (parallel)
-#define PB7                      28  // D28
+#define PE15                     27  // D27
+#define PD7                      28  // D28
 #define PE14                     29  // D29
 #define PE13                     30  // D30
-#define PB11_D31                 31  // D31 (parallel to PB11 / D17)
-#define PB8                      32  // D32
-#define PB9                      33  // D33
-#define PE0                      34  // D34
-#define PE2                      35  // D35
-#define PE3                      36  // D36
-#define PE4                      37  // D37
+#define PB11_D31                 31  // D31 alias of D17 / PB11
+#define PB6                      32  // D32
+#define PB7                      33  // D33 
+#define PB8                      34  // D34
+#define PB9                      35  // D35
+#define PE0                      36  // D36
+#define PA15                     37  // D37
 #define PE12                     38  // D38
-#define PE4_D39                  39  // D39 (parallel to PE4 / D37)
-#define PA15                     40  // D40
-#define PE5                      41  // D41
-#define PE4_D42                  42  // D42 (parallel to PE4 / D37)
-#define PE5_D43                  43  // D43 (parallel to PE5 / D41)
-#define PE6                      44  // D44
-#define PD7                      45  // D45
-#define PE6_D46                  46  // D46 (parallel to PE6 / D44)
-#define PB6                      47  // D47 
+#define PE1                      39  // D39 
+#define PB5                      40  // D40
+#define PE2                      41  // D41
+#define PE3                      42  // D42 
+#define PE4                      43  // D43 
+#define PE5                      44  // D44
+#define PB4                      45  // D45
+#define PE6                      46  // D46
+#define PB3                      47  // D47 
 #define PE10                     48  // D48
 #define PE11                     49  // D49
 #define PE9                      50  // D50
@@ -94,10 +94,10 @@
 
 #define PA11                     70 // USB_DP
 #define PA12                     71 // USB_DM
-#define PE1                      72 // SPI-Flash CS
-#define PB4                      73 // SPI1 MOSI
-#define PB5                      74 // SPI1 MISO
-#define PB3                      75 // SPI1 CLK   (I moved this out of the 0..53 range)
+#define PE1_D72                  72 // SPI-Flash CS, alias of D39 / PE1
+#define PB4_D73                  73 // SPI1 MISO, alias of D45 / PB4
+#define PB5_D74                  74 // SPI1 MOSI, alias of D40 / PB5
+#define PB3_D75                  75 // SPI1 CLK, alias of D47 / PB3
 // Compatibility pins used by existing Speeduino STM32 code paths
 #define PD0                      76 // CAN RX
 #define PD1                      77 // CAN TX
@@ -162,26 +162,26 @@
 // On-board LED pin number
 //Fix me
 #ifndef LED_BUILTIN
-  #define LED_BUILTIN           -1 // No on-board LED
+  #define LED_BUILTIN           PA7 // On-board LED
 #endif
 
 // Below SPI and I2C definitions already done in the core
 // Could be redefined here if differs from the default one
 // SPI Definitions
 #ifndef PIN_SPI_SS
-  #define PIN_SPI_SS            PE1 // NRF24 connector
+  #define PIN_SPI_SS            PE1_D72 // NRF24 connector
 #endif
 #ifndef PIN_SPI_SS1
-  #define PIN_SPI_SS1           PE1 // W25Q16 (on board flash)
+  #define PIN_SPI_SS1           PE1_D72 // W25Q16 (on board flash)
 #endif
 #ifndef PIN_SPI_MOSI
-  #define PIN_SPI_MOSI          PB5 // NRF24 connector & W25Q16 (on board flash)
+  #define PIN_SPI_MOSI          PB5_D74 // NRF24 connector & W25Q16 (on board flash)
 #endif
 #ifndef PIN_SPI_MISO
-  #define PIN_SPI_MISO          PB4 // NRF24 connector & W25Q16 (on board flash)
+  #define PIN_SPI_MISO          PB4_D73 // NRF24 connector & W25Q16 (on board flash)
 #endif
 #ifndef PIN_SPI_SCK
-  #define PIN_SPI_SCK           PB3 // NRF24 connector & W25Q16 (on board flash)
+  #define PIN_SPI_SCK           PB3_D75 // NRF24 connector & W25Q16 (on board flash)
 #endif
 
 // I2C Definitions
