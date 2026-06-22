@@ -17,6 +17,7 @@ A full copy of the license may be found in the projects root directory
 #include "src/pins/fastInputPin.h"
 #include "src/pins/fastOutputPin.h"
 #include "src/pins/outputPin.h"
+#include "scheduler_fuel_controller.h"
 
 constexpr uint8_t SIMPLE_BOOST_P = 1U;
 constexpr uint8_t SIMPLE_BOOST_I = 1U;
@@ -260,7 +261,7 @@ void airConControl(void)
     // ------------------------------------------------------------------------------------------------------
     // Check that the engine has been running past the post-start delay period before enabling the compressor
     // ------------------------------------------------------------------------------------------------------
-    if (currentStatus.engineIsRunning)
+    if (currentStatus.rotationStatus==EngineRotationStatus::Running)
     {
       if(acAfterEngineStartDelay >= configPage15.airConAfterStartDelay)
       {
@@ -462,7 +463,7 @@ void fanControl(void)
 
     
     if ( configPage2.fanWhenOff == true) { fanPermit = true; }
-    else { fanPermit = currentStatus.engineIsRunning; }
+    else { fanPermit = currentStatus.rotationStatus==EngineRotationStatus::Running; }
 
     if ( (fanPermit == true) &&
          ((currentStatus.coolant >= onTemp) || 
@@ -470,7 +471,7 @@ void fanControl(void)
            currentStatus.airconTurningOn == true)) )
     {
       //Fan needs to be turned on - either by high coolant temp, or from an A/C request (to ensure there is airflow over the A/C radiator).
-      if((currentStatus.engineIsCranking) && (configPage2.fanWhenCranking == 0))
+      if((currentStatus.rotationStatus==EngineRotationStatus::Cranking) && (configPage2.fanWhenCranking == 0))
       {
         //If the user has elected to disable the fan during cranking, make sure it's off 
         fanOff();
@@ -493,10 +494,10 @@ void fanControl(void)
   {
     bool fanPermit = false;
     if ( configPage2.fanWhenOff == true) { fanPermit = true; }
-    else { fanPermit = currentStatus.engineIsRunning; }
+    else { fanPermit = currentStatus.rotationStatus==EngineRotationStatus::Running; }
     if (fanPermit == true)
       {
-      if((currentStatus.engineIsCranking) && (configPage2.fanWhenCranking == 0))
+      if((currentStatus.rotationStatus==EngineRotationStatus::Cranking) && (configPage2.fanWhenCranking == 0))
       {
         currentStatus.fanDuty = 0; //If the user has elected to disable the fan during cranking, make sure it's off 
         currentStatus.fanOn = false;
@@ -907,7 +908,7 @@ void vvt2Off(void)
 
 void vvtControl(void)
 {
-  if( (configPage6.vvtEnabled == 1) && (currentStatus.coolant >= temperatureRemoveOffset(configPage4.vvtMinClt)) && (currentStatus.engineIsRunning))
+  if( (configPage6.vvtEnabled == 1) && (currentStatus.coolant >= temperatureRemoveOffset(configPage4.vvtMinClt)) && (currentStatus.rotationStatus==EngineRotationStatus::Running))
   {
     if(vvtTimeHold == false) 
     {
@@ -1182,7 +1183,7 @@ void wmiControl(void)
           break;
         case WMI_MODE_CLOSEDLOOP:
           // Mapped closed loop - Output PWM follows injector duty cycle with 2D correction map applied (RPM vs MAP). Cell value contains correction value% [nom 100%] 
-          wmiPW = max(0, ((int)currentStatus.PW1 + configPage10.wmiOffset)) * get3DTableValue(&wmiTable, (uint16_t)currentStatus.MAP, currentStatus.RPM) / 200;
+          wmiPW = max(0, ((int)fuelSchedule1.pw + configPage10.wmiOffset)) * get3DTableValue(&wmiTable, (uint16_t)currentStatus.MAP, currentStatus.RPM) / 200;
           break;
         default:
           // Wrong mode
