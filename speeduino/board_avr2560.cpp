@@ -2,9 +2,9 @@
 
 #if defined(CORE_AVR)
 #include "globals.h"
-#include "auxiliaries.h"
+#include "src/controllers/vvt/vvtController.h"
 #include "comms_secondary.h"
-#include "idle.h"
+#include "src/controllers/idle/idle.h"
 #include "timers.h"
 #ifdef USE_SPI_EEPROM
   #include "src/SPIAsEEPROM/SPIAsEEPROM.h"
@@ -14,6 +14,7 @@
 #include "board_eeprom_adapter.hpp"
 #include "scheduler_ignition_controller.h"
 #include "scheduler_fuel_controller.h"
+#include "src/controllers/boost/boostController.h"
 
 // Prescaler values for timers 1-3-4-5. Refer to www.instructables.com/files/orig/F3T/TIKL/H3WSA4V7/F3TTIKLH3WSA4V7.jpg
 #define TIMER_PRESCALER_OFF  ((0<<CS12)|(0<<CS11)|(0<<CS10))
@@ -159,13 +160,6 @@ void initBoard(uint32_t baudRate)
     TCCR1B = TIMER_PRESCALER_256;   //Timer1 Control Reg B: Timer Prescaler set to 256. 1 tick = 16uS.
     TIFR1 = (1 << OCF1A) | (1<<OCF1B) | (1<<OCF1C) | (1<<TOV1) | (1<<ICF1); //Clear the compare flags, overflow flag and external input flag bits
 
-    boost_pwm_max_count = (uint16_t)(MICROS_PER_SEC / (16U * configPage6.boostFreq * 2U)); //Converts the frequency in Hz to the number of ticks (at 16uS) it takes to complete 1 cycle. The x2 is there because the frequency is stored at half value (in a byte) to allow frequencies up to 511Hz
-    vvt_pwm_max_count = (uint16_t)(MICROS_PER_SEC / (16U * configPage6.vvtFreq * 2U)); //Converts the frequency in Hz to the number of ticks (at 16uS) it takes to complete 1 cycle
-    if (isPwmIac(configPage6))
-    {
-      idle_pwm_max_count = (uint16_t)(MICROS_PER_SEC / (16U * configPage6.idleFreq * 2U)); //Converts the frequency in Hz to the number of ticks (at 16uS) it takes to complete 1 cycle. Note that the frequency is divided by 2 coming from TS to allow for up to 512hz
-    }
-
     /*
     ***********************************************************************************************************
     * Timers
@@ -252,7 +246,7 @@ void boardInitRTC(void)
   // Do nothing
 }
 
-void boardInitPins(uint8_t)
+void boardInitPins(uint8_t, pinNumbers_t &)
 {
   // Do nothing
 }
@@ -290,6 +284,12 @@ static uint16_t getEepromWriteBlockSize(const statuses &current)
 storage_api_t getBoardStorageApi(void)
 {
   return getEEPROMStorageApi(getEepromWriteBlockSize);
+}
+
+/** @brief Get the PWM timer resolution in uS */
+uint8_t getPwmTimerResolution(void)
+{
+  return 16;
 }
 
 #endif //CORE_AVR

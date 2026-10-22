@@ -2,23 +2,78 @@
 #include "test_fp_support.h"
 #include "maths.h"
 #include "../test_utils.h"
+#include "board_definition.h"
 
 static void test_nudge_i16(void)
 {
   // value below min should be nudged upwards
-  TEST_ASSERT_EQUAL_INT16(8, nudge((int16_t)10, (int16_t)20, (int16_t)5, (int16_t)3));
+  TEST_ASSERT_EQUAL_INT16(-19, nudge((int16_t)-7, (int16_t)11, (int16_t)-37));
 
   // value above max should be nudged downwards
-  TEST_ASSERT_EQUAL_INT16(23, nudge((int16_t)10, (int16_t)20, (int16_t)25, (int16_t)2));
+  TEST_ASSERT_EQUAL_INT16(37, nudge((int16_t)-7, (int16_t)11, (int16_t)55));
 
   // value within range should be unchanged
-  TEST_ASSERT_EQUAL_INT16(15, nudge((int16_t)10, (int16_t)20, (int16_t)15, (int16_t)5));
+  TEST_ASSERT_EQUAL_INT16(-3, nudge((int16_t)-7, (int16_t)11, (int16_t)-3));
 
   // value equal to min should be unchanged
-  TEST_ASSERT_EQUAL_INT16(10, nudge((int16_t)10, (int16_t)20, (int16_t)10, (int16_t)4));
+  TEST_ASSERT_EQUAL_INT16(-5, nudge((int16_t)-7, (int16_t)11, (int16_t)-5));
 
-  // value equal to max should be unchanged
-  TEST_ASSERT_EQUAL_INT16(20, nudge((int16_t)10, (int16_t)20, (int16_t)20, (int16_t)4));
+  // value equal to max should be changed
+  TEST_ASSERT_EQUAL_INT16(-7, nudge((int16_t)-7, (int16_t)11, (int16_t)11));
+}
+
+static void test_nudge_u16(void)
+{
+  // value below min should be nudged upwards
+  TEST_ASSERT_EQUAL_UINT16(15, nudge((uint16_t)7, (uint16_t)19U, (uint16_t)3));
+
+  // value above max should be nudged downwards
+  TEST_ASSERT_EQUAL_UINT16(21, nudge((uint16_t)7, (uint16_t)19U, (uint16_t)33));
+
+  // value within range should be unchanged
+  TEST_ASSERT_EQUAL_UINT16(11, nudge((uint16_t)7, (uint16_t)19U, (uint16_t)11));
+
+  // value equal to min should be unchanged
+  TEST_ASSERT_EQUAL_UINT16(7, nudge((uint16_t)7, (uint16_t)19U, (uint16_t)7));
+
+  // value equal to max should be changed
+  TEST_ASSERT_EQUAL_UINT16(7, nudge((uint16_t)7, (uint16_t)19U, (uint16_t)19));
+}
+
+static void test_normalize_i16(void)
+{
+  // value below min should be nudged upwards
+  TEST_ASSERT_EQUAL_INT16(-1, normalize((int16_t)-7, (int16_t)11, (int16_t)-37));
+
+  // value above max should be nudged downwards
+  TEST_ASSERT_EQUAL_INT16(1, normalize((int16_t)-7, (int16_t)11, (int16_t)55));
+
+  // value within range should be unchanged
+  TEST_ASSERT_EQUAL_INT16(-3, normalize((int16_t)-7, (int16_t)11, (int16_t)-3));
+
+  // value equal to min should be unchanged
+  TEST_ASSERT_EQUAL_INT16(-5, normalize((int16_t)-7, (int16_t)11, (int16_t)-5));
+
+  // value equal to max should be changed
+  TEST_ASSERT_EQUAL_INT16(-7, normalize((int16_t)-7, (int16_t)11, (int16_t)11));
+}
+
+static void test_normalize_u16(void)
+{
+  // value below min should be nudged upwards
+  TEST_ASSERT_EQUAL_UINT16(35, normalize((uint16_t)33, (uint16_t)41U, (uint16_t)3));
+
+  // value above max should be nudged downwards
+  TEST_ASSERT_EQUAL_UINT16(35, normalize((uint16_t)33, (uint16_t)41U, (uint16_t)99));
+
+  // value within range should be unchanged
+  TEST_ASSERT_EQUAL_UINT16(37, normalize((uint16_t)33, (uint16_t)41U, (uint16_t)37));
+
+  // value equal to min should be unchanged
+  TEST_ASSERT_EQUAL_UINT16(33, normalize((uint16_t)33, (uint16_t)41U, (uint16_t)33));
+
+  // value equal to max should be changed
+  TEST_ASSERT_EQUAL_UINT16(33, normalize((uint16_t)33, (uint16_t)41U, (uint16_t)41));
 }
 
 // Tests for clamp()
@@ -58,9 +113,22 @@ static void test_clamp(void)
   TEST_ASSERT_EQUAL_UINT32(200, clamp((uint32_t)250, (uint32_t)10, (uint32_t)200));
 }
 
+static void test_pwmFreqToTicks(void)
+{
+  auto resolution = getPwmTimerResolution();
+  TEST_ASSERT_EQUAL_UINT16(MICROS_PER_SEC/resolution, pwmFreqToTicks(0));
+  TEST_ASSERT_EQUAL_UINT16(MICROS_PER_SEC/resolution, pwmFreqToTicks(1));
+  TEST_ASSERT_NOT_EQUAL_UINT16(1, pwmFreqToTicks(512));
+  TEST_ASSERT_NOT_EQUAL_UINT16(1, pwmFreqToTicks(UINT16_MAX));
+}
+
 void testOther(void) {
   SET_UNITY_FILENAME() {
     RUN_TEST(test_nudge_i16);
+    RUN_TEST_P(test_nudge_u16);
+    RUN_TEST_P(test_normalize_i16);
+    RUN_TEST_P(test_normalize_u16);
     RUN_TEST(test_clamp);
+    RUN_TEST(test_pwmFreqToTicks);
   }
 }

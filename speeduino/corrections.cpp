@@ -25,6 +25,7 @@ There are 2 top level functions that call more detailed corrections for Fuel and
 
 #include "globals.h"
 #include "corrections.h"
+#include "elapsed_time.h"
 #include "timers.h"
 #include "maths.h"
 #include "sensors.h"
@@ -35,22 +36,17 @@ There are 2 top level functions that call more detailed corrections for Fuel and
 #include "fuel_calcs.h"
 #include "unit_testing.h"
 
-static long PID_O2;
-static long PID_output;
-static long PID_AFRTarget;
 /** Instance of the PID object in case that algorithm is used (Always instantiated).
 * Needs to be global as it maintains state outside of each function call.
 * Comes from Arduino (?) PID library.
 */
-static PID egoPID(&PID_O2, &PID_output, &PID_AFRTarget, configPage6.egoKP, configPage6.egoKI, configPage6.egoKD, REVERSE);
+TESTABLE_STATIC PID egoPID;
 
 static uint16_t aeActivatedReading; //The mapDOT/tpsDOT value seen when the MAE/TAE was activated. 
 
 TESTABLE_STATIC uint16_t AFRnextCycle;
-static unsigned long knockStartTime;
-static uint8_t knockLastRecoveryStep;
-//static int16_t knockWindowMin; //The current minimum crank angle for a knock pulse to be valid
-//static int16_t knockWindowMax;//The current maximum crank angle for a knock pulse to be valid
+TESTABLE_STATIC uint32_t knockStartTime;
+TESTABLE_STATIC uint8_t knockLastRecoveryStep;
 static uint8_t dfcoTaper;
 
 TESTABLE_CONSTEXPR table2D_u8_u8_4 taeTable(&configPage4.taeBins, &configPage4.taeValues);
@@ -77,20 +73,17 @@ static constexpr uint8_t NO_FUEL_CORRECTION = ONE_HUNDRED_PCT;
 // (yes, it's the same as NO_FUEL_CORRECTION, but captures a slightly different concept)
 static constexpr uint8_t BASELINE_FUEL_CORRECTION = ONE_HUNDRED_PCT;
 
+static void setEgoPidTunings(const config6 &page6) {
+  egoPID.setOutputLimits(-page6.egoLimit, page6.egoLimit); 
+  egoPID.setTunings(PidTuningParameters(page6.egoKP, page6.egoKI, page6.egoKD) * -1); 
+}
 
 /** Initialise instances and vars related to corrections (at ECU boot-up).
  */
 void initialiseCorrections(void)
 {
-  PID_output = 0L;
-  PID_O2 = 0L;
-  PID_AFRTarget = 0L;
-  // Toggling between modes resets the PID internal state
-  // This is required by the unit tests
-  // TODO: modify PID code to provide a method to reset it. 
-  egoPID.SetMode(AUTOMATIC);
-  egoPID.SetMode(MANUAL);
-  egoPID.SetMode(AUTOMATIC);
+  setEgoPidTunings(configPage6);
+  egoPID.resetIntegral(currentStatus.O2);
 
   currentStatus.flexIgnCorrection = 0;
   //Default value of no adjustment must be set to avoid randomness on first correction cycle after startup
@@ -181,7 +174,7 @@ TESTABLE_INLINE_STATIC uint16_t correctionCranking(void)
     // just need to keep MISRA checker happy.
   }
 
-  return max((uint16_t)NO_FUEL_CORRECTION, (uint16_t)crankingPercent);
+  return (std::max)((uint16_t)NO_FUEL_CORRECTION, (uint16_t)crankingPercent);
 }
 
 // ============================= After Start Enrichment =============================
@@ -319,13 +312,13 @@ static inline uint16_t calcDeccelEnrichment(void) {
 }
 
 static inline bool aeTimeoutExpired(void) {
-  return micros() >= currentStatus.AEEndTime;
+  // aeTime is stored as mS / 10, so multiply it by 10000 to get it in uS
+  return hasIntervalElapsed(micros(), currentStatus.AEStartTime, TIME_TENTH_MILLIS.toUser(configPage2.aeTime));
 }
 
-//Set the time in the future where the enrichment will be turned off. 
+//Record when the enrichment started: it will be turned off once aeTime has elapsed.
 static inline void updateAeTimeout(void) {
-  // taeTime is stored as mS / 10, so multiply it by 10000 to get it in uS
-  currentStatus.AEEndTime = micros() + TIME_TENTH_MILLIS.toUser(configPage2.aeTime); 
+  currentStatus.AEStartTime = micros();
 }
 
 using aeTimeoutExpiredCallback_t = void (*)(void);
@@ -573,10 +566,13 @@ This simple check applies the extra fuel if we're currently launching
 */
 TESTABLE_INLINE_STATIC uint8_t correctionLaunch(void)
 {
-  int8_t correction = (int8_t)NO_FUEL_CORRECTION;
-  if (currentStatus.launchingHard || currentStatus.launchingSoft) {
+  // Accumulate in int16_t: NO_FUEL_CORRECTION (100) + lnchFuelAdd (tune range
+  // -40..+80) can reach 180, which overflows int8_t. The result is always within
+  // [60, 180], so the final narrowing to uint8_t is safe.
+  int16_t correction = (int16_t)NO_FUEL_CORRECTION;
+  if (currentStatus.launchStatus.launchingHard || currentStatus.launchStatus.launchingSoft) {
     correction = correction + configPage6.lnchFuelAdd;
-  } 
+  }
   return (uint8_t)correction;
 }
 
@@ -704,17 +700,12 @@ static inline uint8_t computeSimpleCorrection(const statuses &current, const con
 }
 
 static inline uint8_t computePIDCorrection(const statuses &current, const config6 &page6) {
-  //Set the limits again, just in case the user has changed them since the last loop. 
-  //Note that these are sent to the PID library as (Eg:) -15 and +15
-  egoPID.SetOutputLimits(-page6.egoLimit, page6.egoLimit); 
   //Set the PID values again, just in case the user has changed them since the last loop
-  egoPID.SetTunings(page6.egoKP, page6.egoKI, page6.egoKD); 
-  PID_O2 = (long)(current.O2);
-  PID_AFRTarget = (long)(current.afrTarget);
+  setEgoPidTunings(page6);
+  egoPID.setSetPoint(current.afrTarget);
 
-  (void)egoPID.Compute();
   // Can't do this in one step: MISRA compliance.
-  int8_t correction = (int8_t)BASELINE_FUEL_CORRECTION + (int8_t)PID_output;
+  int8_t correction = (int8_t)BASELINE_FUEL_CORRECTION + (int8_t)egoPID.compute(current.O2);
   return (uint8_t)correction;
 }
 
@@ -737,8 +728,8 @@ static inline bool isAfrClosedLoopOperational(const statuses &current, const con
       && (current.O2 > page6.ego_min) 
       && (current.runSecs > page6.ego_sdelay) 
       && (!current.isDFCOActive) 
-      && (current.MAP <= (long)MAP.toUser( page9.egoMAPMax)) 
-      && (current.MAP >= (long)MAP.toUser( page9.egoMAPMin))
+      && (current.MAP <= MAP.toUser(page9.egoMAPMax)) 
+      && (current.MAP >= MAP.toUser(page9.egoMAPMin))
       ;
 }
 
@@ -861,7 +852,7 @@ uint16_t correctionsFuel(void)
   sumCorrections = combineCorrections(sumCorrections, correctionDFCOfuel());
 
   //This is the maximum allowable increase
-  return min((uint16_t)1500U, (uint16_t)sumCorrections);
+  return (std::min)((uint16_t)1500U, (uint16_t)sumCorrections);
 }
 
 //******************************** IGNITION ADVANCE CORRECTIONS ********************************
@@ -922,7 +913,7 @@ static inline bool isWMIAdvanceEnabled(void) {
 static inline bool isWMIAdvanceOperational(void) {
   return (currentStatus.TPS >= configPage10.wmiTPS) 
       && (currentStatus.RPM >= RPM_COARSE.toUser(configPage10.wmiRPM)) 
-      && (currentStatus.MAP >= (int32_t)MAP.toUser(configPage10.wmiMAP)) 
+      && (currentStatus.MAP >= MAP.toUser(configPage10.wmiMAP)) 
       && (temperatureAddOffset(currentStatus.IAT) >= configPage10.wmiIAT);
 }
 
@@ -1080,22 +1071,9 @@ TESTABLE_INLINE_STATIC int8_t correctionNitrous(int8_t advance)
 TESTABLE_INLINE_STATIC int8_t correctionSoftLaunch(int8_t advance)
 {
   //SoftCut rev limit for 2-step launch control.
-  if(  configPage6.launchEnabled 
-    && currentStatus.clutchTrigger 
-    && (currentStatus.clutchEngagedRPM < RPM_COARSE.toUser( configPage6.flatSArm))
-    && (currentStatus.RPM > RPM_COARSE.toUser( configPage6.lnchSoftLim))
-    && (currentStatus.TPS >= configPage10.lnchCtrlTPS) 
-    && ( (configPage2.vssMode == VSS_MODE_OFF) || (currentStatus.vss <= configPage10.lnchCtrlVss) )
-    )
+  if(currentStatus.launchStatus.launchingSoft)
   {
-    currentStatus.launchingSoft = true;
-    currentStatus.softLaunchActive = true;
     advance = configPage6.lnchRetard;
-  }
-  else
-  {
-    currentStatus.launchingSoft = false;
-    currentStatus.softLaunchActive = false;
   }
 
   return advance;
@@ -1104,28 +1082,23 @@ TESTABLE_INLINE_STATIC int8_t correctionSoftLaunch(int8_t advance)
  */
 TESTABLE_INLINE_STATIC int8_t correctionSoftFlatShift(int8_t advance)
 {
-  if(configPage6.flatSEnable 
-  && currentStatus.clutchTrigger 
-  && (currentStatus.clutchEngagedRPM > RPM_COARSE.toUser( configPage6.flatSArm))
-  && (currentStatus.RPM > (currentStatus.clutchEngagedRPM - RPM_COARSE.toUser( configPage6.flatSSoftWin) ) ) )
+  if (currentStatus.launchStatus.flatShiftingSoft)
   {
-    currentStatus.flatShiftSoftCut = true;
     advance = configPage6.flatSRetard;
   }
-  else { currentStatus.flatShiftSoftCut = false; }
 
   return advance;
 }
 
-static inline uint8_t _calculateKnockRecovery(uint8_t curKnockRetard)
+TESTABLE_INLINE_STATIC uint8_t _calculateKnockRecovery(uint8_t curKnockRetard, uint32_t currMicros)
 {
   uint8_t tmpKnockRetard = curKnockRetard;
   //Check whether we are in knock recovery
-  if((micros() - knockStartTime) > (configPage10.knock_duration * 100000UL)) //knock_duration is in seconds*10
+  if( hasIntervalElapsed(currMicros, knockStartTime, TIME_HUNDRED_MILLIS.toUser(configPage10.knock_duration)) )
   {
     //Calculate how many recovery steps have occurred since the 
-    uint32_t timeInRecovery = (micros() - knockStartTime) - (configPage10.knock_duration * 100000UL);
-    uint8_t recoverySteps = timeInRecovery / (configPage10.knock_recoveryStepTime * 100000UL);
+    uint32_t timeInRecovery = timeElapsed(currMicros, knockStartTime) - TIME_HUNDRED_MILLIS.toUser(configPage10.knock_duration);
+    uint8_t recoverySteps = timeInRecovery / TIME_HUNDRED_MILLIS.toUser(configPage10.knock_recoveryStepTime);
     uint8_t recoveryTimingAdj = 0;
     if(recoverySteps > knockLastRecoveryStep) 
     { 
@@ -1151,9 +1124,23 @@ static inline uint8_t _calculateKnockRecovery(uint8_t curKnockRetard)
   return tmpKnockRetard;
 }
 
+static inline uint8_t applyAdditionalDigitalKnockRetard(uint8_t knockRetard, uint32_t currMicros)
+{
+  if(!currentStatus.knockPulseDetected
+    || !hasIntervalElapsed(currMicros, knockStartTime, configPage10.knock_stepTime * 1000UL))
+  {
+    return knockRetard;
+  }
+
+  currentStatus.knockCount++;
+  knockStartTime = currMicros;
+  knockLastRecoveryStep = 0;
+  return configPage10.knock_firstStep + ((currentStatus.knockCount - configPage10.knock_count) * configPage10.knock_stepSize);
+}
+
 /** Ignition knock (retard) correction.
  */
-static inline int8_t correctionKnockTiming(int8_t advance)
+TESTABLE_STATIC int8_t correctionKnockTiming(int8_t advance, uint32_t currMicros, uint8_t (*fnGetAnalogKnock)(void))
 {
   byte tmpKnockRetard = 0;
 
@@ -1167,25 +1154,13 @@ static inline int8_t correctionKnockTiming(int8_t advance)
         //Knock retard is currently active already.
         tmpKnockRetard = currentStatus.knockRetard;
 
-        //Check if additional knock events occurred
-        if(currentStatus.knockPulseDetected)
-        {
-          //Check if the latest event was far enough after the initial knock event to pull further timing
-          if((micros() - knockStartTime) > (configPage10.knock_stepTime * 1000UL))
-          {
-            //Recalculate the amount timing being pulled
-            currentStatus.knockCount++;
-            tmpKnockRetard = configPage10.knock_firstStep + ((currentStatus.knockCount - configPage10.knock_count) * configPage10.knock_stepSize);
-            knockStartTime = micros();
-            knockLastRecoveryStep = 0;
-          }
-        }
-        tmpKnockRetard = _calculateKnockRecovery(tmpKnockRetard);
+        tmpKnockRetard = applyAdditionalDigitalKnockRetard(tmpKnockRetard, currMicros);
+        tmpKnockRetard = _calculateKnockRecovery(tmpKnockRetard, currMicros);
       }
       else
       {
         //Knock currently inactive but needs to be active now
-        knockStartTime = micros();
+        knockStartTime = currMicros;
         tmpKnockRetard = configPage10.knock_firstStep + ((currentStatus.knockCount - configPage10.knock_count) * configPage10.knock_stepSize); //
         currentStatus.knockRetardActive = true;
         knockLastRecoveryStep = 0;
@@ -1200,32 +1175,32 @@ static inline int8_t correctionKnockTiming(int8_t advance)
     {
       //Check if additional knock events occurred
       //Additional knock events are when the step time has passed and the voltage remains above the threshold
-      if((micros() - knockStartTime) > (configPage10.knock_stepTime * 1000UL))
+      if( hasIntervalElapsed(currMicros, knockStartTime, configPage10.knock_stepTime * 1000UL) )
       {
         //Sufficient time has passed, check the current knock value
-        uint16_t tmpKnockReading = getAnalogKnock();
+        uint16_t tmpKnockReading = fnGetAnalogKnock();
 
         if(tmpKnockReading > configPage10.knock_threshold)
         {
           currentStatus.knockCount++;
           tmpKnockRetard = configPage10.knock_firstStep + ((currentStatus.knockCount - configPage10.knock_count) * configPage10.knock_stepSize);
-          knockStartTime = micros();
+          knockStartTime = currMicros;
           knockLastRecoveryStep = 0;
         }   
       }
-      tmpKnockRetard = _calculateKnockRecovery(tmpKnockRetard);
+      tmpKnockRetard = _calculateKnockRecovery(tmpKnockRetard, currMicros);
     }
     else
     {
       //If not is not currently active, we read the analog pin every 30Hz
       if( BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_30HZ) ) 
       { 
-        uint16_t tmpKnockReading = getAnalogKnock();
+        uint16_t tmpKnockReading = fnGetAnalogKnock();
 
         if(tmpKnockReading > configPage10.knock_threshold)
         {
           //Knock detected
-          knockStartTime = micros();
+          knockStartTime = currMicros;
           tmpKnockRetard = configPage10.knock_firstStep; //
           currentStatus.knockRetardActive = true;
           knockLastRecoveryStep = 0;
@@ -1236,7 +1211,7 @@ static inline int8_t correctionKnockTiming(int8_t advance)
     // Unknown knock mode - do nothing, keep MISRA checker happy.
   }
 
-  tmpKnockRetard = min(tmpKnockRetard, configPage10.knock_maxRetard); //Ensure the commanded retard is not higher than the maximum allowed.
+  tmpKnockRetard = (std::min)(tmpKnockRetard, configPage10.knock_maxRetard); //Ensure the commanded retard is not higher than the maximum allowed.
   currentStatus.knockRetard = tmpKnockRetard;
   return (int8_t)((int16_t)advance - (int16_t)tmpKnockRetard);
 }
@@ -1326,7 +1301,8 @@ uint16_t correctionsDwell(uint16_t dwell)
   uint16_t sparkDur_uS = TIME_TEN_MILLIS.toUser( configPage4.sparkDur);
   uint8_t pulsesPerRevolution = getPulsesPerRev();
   uint16_t dwellPerRevolution = (dwell + sparkDur_uS) * pulsesPerRevolution;
-  if(dwellPerRevolution > currentStatus.revolutionTime)
+  //A zero revolution time means the engine speed is unknown: there is nothing to limit against, and the limiter would cut the dwell to zero
+  if((currentStatus.revolutionTime != 0U) && (dwellPerRevolution > currentStatus.revolutionTime))
   {
     //Possibly need some method of reducing spark duration here as well, but this is a start
     uint16_t adjustedSparkDur = fast_div32_16(sparkDur_uS * currentStatus.revolutionTime, dwellPerRevolution);
@@ -1352,7 +1328,7 @@ int8_t correctionsIgn(int8_t base_advance)
   advance = correctionNitrous(advance);
   advance = correctionSoftLaunch(advance);
   advance = correctionSoftFlatShift(advance);
-  advance = correctionKnockTiming(advance);
+  advance = correctionKnockTiming(advance, micros(), getAnalogKnock);
 
   advance = correctionDFCOignition(advance);
 

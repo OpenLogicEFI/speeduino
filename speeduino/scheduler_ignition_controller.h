@@ -4,10 +4,18 @@
 #include "statuses.h"
 
 extern IgnitionSchedule ignitionSchedule1;
+#if IGN_CHANNELS >= 2
 extern IgnitionSchedule ignitionSchedule2;
+#endif
+#if IGN_CHANNELS >= 3
 extern IgnitionSchedule ignitionSchedule3;
+#endif
+#if IGN_CHANNELS >= 4
 extern IgnitionSchedule ignitionSchedule4;
+#endif
+#if IGN_CHANNELS >= 5
 extern IgnitionSchedule ignitionSchedule5;
+#endif
 #if IGN_CHANNELS >= 6
 extern IgnitionSchedule ignitionSchedule6;
 #endif
@@ -34,18 +42,19 @@ void applyOverDwellProtection(const config4 &page4, const statuses &current);
  * 
  * @param page2 The tune
  * @param page4 The tune
+ * @param page13 The tune
  * @param current Current system state
  */
-void calculateIgnitionAngles(const config2 &page2, const config4 &page4, statuses &current);
+void calculateIgnitionAngles(const config2 &page2, const config4 &page4, const config13 &page13, statuses &current);
 
 /**
  * @brief Schedule all ignition channels
  * 
  * @param current Current system state
+ * @param page4 The Tune
  * @param crankAngle Crank angle
- * @param dwellTime Target dwell time
  */
-void setIgnitionChannels(const statuses &current, uint16_t crankAngle, uint16_t dwellTime);
+void setIgnitionChannels(const statuses &current, const config4 &page4, uint16_t crankAngle);
 
 /** @brief Start the timers that drive schedulers  */
 void startIgnitionSchedulers(void);
@@ -54,4 +63,7 @@ void startIgnitionSchedulers(void);
 void stopIgnitionSchedulers(void);
 
 /** @brief Initialise all ignition schedules */
-void initialiseIgnitionSchedules(uint8_t sparkMode, uint8_t numCylinders, uint8_t rotaryMode);
+void initialiseIgnitionSchedules(statuses &current, config2 &page2, config4 &page4, const config10 &page10, config13 &page13, const pinNumbers_t &pins);
+
+/** @brief Utility function to stop charging all ignition coils */
+void stopAllCoilsCharging(void);

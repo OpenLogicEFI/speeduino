@@ -1,170 +1,118 @@
-#include <decoders.h>
-#include <globals.h>
-#include <unity.h>
+#include "decoders.h"
+#include "decoder_init.h"
+#include "globals.h"
 #include "scheduler.h"
-#include "../../test_utils.h"
+#include "test_utils.h"
 #include "scheduler_ignition_controller.h"
+#include "crankMaths.h"
+#include "src/decoders/shared/decoder_state.h"
 
-extern uint16_t ignitionEndTeeth[IGN_CHANNELS];
+extern decoders::shared::state_t _decoderState;
+extern void calculateIgnitionAngles(IgnitionSchedule &schedule, uint16_t dwellAngle, int8_t advance);
 
-void test_nissan360_newIgn_12_trig0_1()
+static void assert_setEndTeeth(uint16_t expected, decoder_t &decoder, IgnitionSchedule &schedule, uint8_t index, int8_t advance)
 {
-    //Test the set end tooth function. Conditions:
-    //Trigger: 12/1
-    //Advance: 10
-    //triggerAngle=0
+    schedule.dischargeAngle = 360 + advance; 
+    decoder.setEndTeeth();
+    TEST_ASSERT_EQUAL(expected, _decoderState.ignitionEndTeeth[index]);
+}
+
+void test_setEndTeeth_channel1()
+{
     decoder_t decoder = triggerSetup_Nissan360();
     configPage4.sparkMode = IGN_MODE_WASTED;
+
     configPage4.triggerAngle = 0; //No trigger offset
+    assert_setEndTeeth(171, decoder, ignitionSchedule1, 0, -10);
+    assert_setEndTeeth(176, decoder, ignitionSchedule1, 0, 0);
+    assert_setEndTeeth(158, decoder, ignitionSchedule1, 0, -35);
 
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(171, ignitionEndTeeth[0]);
+    configPage4.triggerAngle = 90;
+    assert_setEndTeeth(126, decoder, ignitionSchedule1, 0, -10);
 
-    //Test again with 0 degrees advance
-    calculateIgnitionAngles(ignitionSchedule1, 5, 0);
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(176, ignitionEndTeeth[0]);
+    configPage4.triggerAngle = 180;
+    assert_setEndTeeth(81, decoder, ignitionSchedule1, 0, -10);
 
-    //Test again with 35 degrees advance
-    calculateIgnitionAngles(ignitionSchedule1, 5, 35);
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(158, ignitionEndTeeth[0]);
+    configPage4.triggerAngle = 270;
+    assert_setEndTeeth(36, decoder, ignitionSchedule1, 0, -10);
+
+    configPage4.triggerAngle = 360;
+    assert_setEndTeeth(351, decoder, ignitionSchedule1, 0, -10);
+
+    configPage4.triggerAngle = -90;
+    assert_setEndTeeth(216, decoder, ignitionSchedule1, 0, -10);
+
+    configPage4.triggerAngle = -180;
+    assert_setEndTeeth(261, decoder, ignitionSchedule1, 0, -10);
+
+    configPage4.triggerAngle = -270;
+    assert_setEndTeeth(306, decoder, ignitionSchedule1, 0, -10);
+
+    configPage4.triggerAngle = -360;
+    assert_setEndTeeth(351, decoder, ignitionSchedule1, 0, -10);
 }
 
-void test_nissan360_newIgn_12_trig90_1()
+static void test_getCrankAngle(void)
 {
-    //Test the set end tooth function. Conditions:
-    //Trigger: 12/1
-    //Advance: 10
-    //triggerAngle=90
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = 90; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-    
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(126, ignitionEndTeeth[0]);
+    auto decoder = triggerSetup_Nissan360();
+
+    auto run_case = [&](int toothNum, unsigned long elapsedDelta, int trigAngle, int16_t expected) {
+        // Set deterministic tooth times so halfTooth is known
+        _decoderState.toothLastMinusOneToothTime = 1000;
+        _decoderState.toothLastToothTime = 1500; // halfTooth = 250
+        _decoderState.toothCurrentCount = toothNum;
+        _decoderState.decoderStatus.syncStatus = SyncStatus::Full;
+        configPage4.triggerAngle = trigAngle;
+        CRANK_ANGLE_MAX_IGN = CRANK_ANGLE_MAX_INJ = 360;
+        setAngleConverterRevolutionTime(2000);
+        TEST_ASSERT_EQUAL(expected, decoder.pGetCrankAngle(_decoderState.toothLastToothTime + elapsedDelta));
+    };
+
+    // halfTooth = (1500-1000)/2 = 250
+    // Cases: elapsed <=250 -> no extra degree; elapsed >250 -> +1 degree
+    run_case(1, 100, 0, 0);       // tooth 1, before half -> 0 deg
+    run_case(1, 300, 0, 1);       // tooth 1, after half -> 1 deg
+    run_case(2, 100, 0, 2);       // tooth 2 -> 2 deg
+    run_case(36, 100, 90, 160);   // tooth 36: (35*2)=70 + 90 = 160
+    run_case(180, 300, 0, 359);   // tooth 180: (179*2)=358 + 1 => 359 deg
+    // Negative triggerAngle should wrap into positive range
+    run_case(1, 100, -90, 270);   // -90 -> +360 => 270
 }
 
-void test_nissan360_newIgn_12_trig180_1()
+static void test_getRevolutionTime(void)
 {
-    //Test the set end tooth function. Conditions:
-    //Trigger: 36-1
-    //Advance: 10
-    //triggerAngle=180
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = 180; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-    
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(81, ignitionEndTeeth[0]);
-}
+        auto decoder = triggerSetup_Nissan360();
 
-void test_nissan360_newIgn_12_trig270_1()
-{
-    //Test the set end tooth function. Conditions:
-    //Trigger: 36-1
-    //Advance: 10
-    //triggerAngle=270
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = 270; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-    
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(36, ignitionEndTeeth[0]);
-}
+        // --- Cranking path: startRevolutions < 2 -> revTime = gap * 180
+        currentStatus.setRpm(0);
+        currentStatus.crankRPM = 400;
+        currentStatus.revolutionTime = 12345UL;
+        currentStatus.startRevolutions = 0; // cranking
+        _decoderState.decoderStatus.syncStatus = SyncStatus::Full;
+        _decoderState.toothLastMinusOneToothTime = 1000UL;
+        _decoderState.toothLastToothTime = _decoderState.toothLastMinusOneToothTime + 333UL; // gap = 333 -> revTime = 333*180
+        TEST_ASSERT_EQUAL_UINT32(333UL*180UL, decoder.getRevolutionTime());
 
-void test_nissan360_newIgn_12_trig360_1()
-{
-    //Test the set end tooth function. Conditions:
-    //Trigger: 36-1
-    //Advance: 10
-    //triggerAngle=360
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = 360; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
+        // --- Running path: use the toothOne pair and >>1 scaling
+        currentStatus.setRpm(2000);
+        currentStatus.startRevolutions = 2; // not cranking
+        _decoderState.decoderStatus.syncStatus = SyncStatus::Full;
+        _decoderState.toothOneMinusOneTime = 1000UL;
+        _decoderState.toothOneTime = _decoderState.toothOneMinusOneTime + 120000UL; // >>1 => 60000 uS revTime
+        TEST_ASSERT_EQUAL_UINT32(60000UL, decoder.getRevolutionTime());
+        TEST_ASSERT_EQUAL_UINT32(120000UL, _decoderState.MAX_STALL_TIME);
 
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(351, ignitionEndTeeth[0]);
-}
-
-void test_nissan360_newIgn_12_trigNeg90_1()
-{
-    //Test the set end tooth function. Conditions:
-    //Trigger: 36-1
-    //Advance: 10
-    //triggerAngle=-90
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = -90; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-    
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(216, ignitionEndTeeth[0]);
-}
-
-void test_nissan360_newIgn_12_trigNeg180_1()
-{
-    //Test the set end tooth function. Conditions:
-    //Trigger: 36-1
-    //Advance: 10
-    //triggerAngle=-180
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = -180; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-    
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(261, ignitionEndTeeth[0]);
-}
-
-void test_nissan360_newIgn_12_trigNeg270_1()
-{
-    //Test the set end tooth function. Conditions:
-    //Trigger: 36-1
-    //Advance: 10
-    //triggerAngle=-270
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = -270; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-    
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(306, ignitionEndTeeth[0]);
-}
-
-void test_nissan360_newIgn_12_trigNeg360_1()
-{
-    //Test the set end tooth function. Conditions:
-    //Trigger: 36-1
-    //Advance: 10
-    //triggerAngle=-360
-    decoder_t decoder = triggerSetup_Nissan360();
-    configPage4.sparkMode = IGN_MODE_WASTED;
-    configPage4.triggerAngle = -360; //No trigger offset
-    calculateIgnitionAngles(ignitionSchedule1, 5, 10);
-
-    decoder.setEndTeeth();
-    TEST_ASSERT_EQUAL(351, ignitionEndTeeth[0]);
+        // --- Fallback: when sync is lost, the speed is unknown. The stall time is kept
+        _decoderState.decoderStatus.syncStatus = SyncStatus::None;
+        TEST_ASSERT_EQUAL_UINT32(0UL, decoder.getRevolutionTime());
+        TEST_ASSERT_EQUAL_UINT32(120000UL, _decoderState.MAX_STALL_TIME);
 }
 
 void testNissan360()
 {
   SET_UNITY_FILENAME() {
-
-
-    RUN_TEST(test_nissan360_newIgn_12_trig0_1);
-    RUN_TEST(test_nissan360_newIgn_12_trig90_1);
-    RUN_TEST(test_nissan360_newIgn_12_trig180_1);
-    RUN_TEST(test_nissan360_newIgn_12_trig270_1);
-    RUN_TEST(test_nissan360_newIgn_12_trig360_1);
-    RUN_TEST(test_nissan360_newIgn_12_trigNeg90_1);
-    RUN_TEST(test_nissan360_newIgn_12_trigNeg180_1);
-    RUN_TEST(test_nissan360_newIgn_12_trigNeg270_1);
-    RUN_TEST(test_nissan360_newIgn_12_trigNeg360_1);
+    RUN_TEST_P(test_setEndTeeth_channel1);
+    RUN_TEST_P(test_getCrankAngle);
+    RUN_TEST_P(test_getRevolutionTime);
   }
 }

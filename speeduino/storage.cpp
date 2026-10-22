@@ -14,6 +14,9 @@ A full copy of the license may be found in the projects root directory
 #include "preprocessor.h"
 #include "unit_testing.h"
 #include "scheduler.h"
+#include "storage_details.h"
+
+using namespace storage::details;
 
 #if defined(CORE_AVR)
 #pragma GCC push_options
@@ -54,12 +57,12 @@ const storage_api_t& getStorageAPI(void)
 // Calibration data is stored at the end of the EEPROM (This is in case any further calibration tables are needed as they are large blocks)
 constexpr uint16_t EEPROM_DATA_VERSION = 0;
 constexpr uint16_t STORAGE_END = 0xFFF;
-constexpr uint16_t EEPROM_CALIBRATION_CLT_VALUES = STORAGE_END-(uint16_t)sizeof(decltype(cltCalibrationTable)::values);
-constexpr uint16_t EEPROM_CALIBRATION_CLT_BINS =  EEPROM_CALIBRATION_CLT_VALUES-(uint16_t)sizeof(decltype(cltCalibrationTable)::axis);
-constexpr uint16_t EEPROM_CALIBRATION_IAT_VALUES = EEPROM_CALIBRATION_CLT_BINS-(uint16_t)sizeof(decltype(iatCalibrationTable)::values);
-constexpr uint16_t EEPROM_CALIBRATION_IAT_BINS = EEPROM_CALIBRATION_IAT_VALUES-(uint16_t)sizeof(decltype(iatCalibrationTable)::axis);
-constexpr uint16_t EEPROM_CALIBRATION_O2_VALUES = EEPROM_CALIBRATION_IAT_BINS-(uint16_t)sizeof(decltype(o2CalibrationTable)::values);
-constexpr uint16_t EEPROM_CALIBRATION_O2_BINS =   EEPROM_CALIBRATION_O2_VALUES-(uint16_t)sizeof(decltype(o2CalibrationTable)::axis);
+constexpr uint16_t EEPROM_CALIBRATION_CLT_VALUES = STORAGE_END-getCalibrationElementSize(SensorCalibrationTable::CoolantSensor, SensorCalibrationTableElement::Values);
+constexpr uint16_t EEPROM_CALIBRATION_CLT_BINS =  EEPROM_CALIBRATION_CLT_VALUES-getCalibrationElementSize(SensorCalibrationTable::CoolantSensor, SensorCalibrationTableElement::Bins);
+constexpr uint16_t EEPROM_CALIBRATION_IAT_VALUES = EEPROM_CALIBRATION_CLT_BINS-getCalibrationElementSize(SensorCalibrationTable::IntakeAirTempSensor, SensorCalibrationTableElement::Values);
+constexpr uint16_t EEPROM_CALIBRATION_IAT_BINS = EEPROM_CALIBRATION_IAT_VALUES-getCalibrationElementSize(SensorCalibrationTable::IntakeAirTempSensor, SensorCalibrationTableElement::Bins);
+constexpr uint16_t EEPROM_CALIBRATION_O2_VALUES = EEPROM_CALIBRATION_IAT_BINS-getCalibrationElementSize(SensorCalibrationTable::O2Sensor, SensorCalibrationTableElement::Values);
+constexpr uint16_t EEPROM_CALIBRATION_O2_BINS =   EEPROM_CALIBRATION_O2_VALUES-getCalibrationElementSize(SensorCalibrationTable::O2Sensor, SensorCalibrationTableElement::Bins);
 constexpr uint16_t EEPROM_LAST_BARO = (EEPROM_CALIBRATION_O2_BINS-(uint16_t)1);
 
 constexpr uint16_t EEPROM_CONFIG1_MAP    = 3;
@@ -92,6 +95,52 @@ constexpr uint16_t EEPROM_CONFIG8_MAP8   = 3151;
 constexpr uint16_t EEPROM_CONFIG15_MAP   = 3199;
 constexpr uint16_t EEPROM_CONFIG15_START = 3281;
 
+TESTABLE_INLINE_STATIC uint16_t getSensorCalibrationAddress(SensorCalibrationTable sensor, SensorCalibrationTableElement element) {
+  constexpr uint16_t EEPROM_CALIBRATION_CLT_CRC = 3674;
+  constexpr uint16_t EEPROM_CALIBRATION_IAT_CRC = 3678;
+  constexpr uint16_t EEPROM_CALIBRATION_O2_CRC = 3682; 
+
+  if (sensor==SensorCalibrationTable::CoolantSensor)
+  {
+    if (element==SensorCalibrationTableElement::Crc) {
+      return EEPROM_CALIBRATION_CLT_CRC;
+    }
+    if (element==SensorCalibrationTableElement::Values) {
+      return EEPROM_CALIBRATION_CLT_VALUES;
+    }
+    if (element==SensorCalibrationTableElement::Bins) {
+      return EEPROM_CALIBRATION_CLT_BINS;
+    }
+  }
+
+  if (sensor==SensorCalibrationTable::IntakeAirTempSensor)
+  {
+    if (element==SensorCalibrationTableElement::Crc) {
+      return EEPROM_CALIBRATION_IAT_CRC;
+    }
+    if (element==SensorCalibrationTableElement::Values) {
+      return EEPROM_CALIBRATION_IAT_VALUES;
+    }
+    if (element==SensorCalibrationTableElement::Bins) {
+      return EEPROM_CALIBRATION_IAT_BINS;
+    }
+  }
+  if (sensor==SensorCalibrationTable::O2Sensor) {
+    if (element==SensorCalibrationTableElement::Crc) {
+      return EEPROM_CALIBRATION_O2_CRC;
+    }
+    if (element==SensorCalibrationTableElement::Values) {
+      return EEPROM_CALIBRATION_O2_VALUES;
+    }
+    if (element==SensorCalibrationTableElement::Bins) {
+      return EEPROM_CALIBRATION_O2_BINS;
+    }
+  }
+
+  INTERNAL_TEST_ASSERT(false);
+  return 0; // Fail safe
+}
+
 #if defined(UNIT_TEST)
 uint16_t MAX_PAGE_ADDRESS = EEPROM_LAST_BARO-sizeof(uint8_t);
 uint16_t STORAGE_SIZE = STORAGE_END;
@@ -101,6 +150,15 @@ uint16_t STORAGE_SIZE = STORAGE_END;
 // This is *THE* single source of truth for mapping the tune
 // (I.e page entities) to EEPROM locations.
 TESTABLE_STATIC uint16_t getEntityStartAddress(page_iterator_t iter) {
+  if ( iter.location.page==CLT_CALIBRATION_PAGE) {
+    return getSensorCalibrationAddress(SensorCalibrationTable::CoolantSensor, (SensorCalibrationTableElement)(iter.location.index));
+  }
+  if (iter.location.page==IAT_CALIBRATION_PAGE) {
+    return getSensorCalibrationAddress(SensorCalibrationTable::IntakeAirTempSensor, (SensorCalibrationTableElement)(iter.location.index));
+  }
+  if (iter.location.page==O2_CALIBRATION_PAGE) {
+    return getSensorCalibrationAddress(SensorCalibrationTable::O2Sensor, (SensorCalibrationTableElement)(iter.location.index));
+  }
   struct entity_storage_map_t {
       void *pEntity;
       uint16_t eepromStartAddress;
@@ -200,39 +258,27 @@ static inline uint16_t write_range(const byte *pStart, const byte *pEnd, uint16_
   return updateBlockLimitWriteOps(externalApi, address, pStart, pEnd, writesRemaining);
 }
 
-static inline write_location write(const table_row_iterator &row, const write_location &location)
+template <typename Iter>
+static inline write_location write_range(Iter pStart, Iter pEnd, write_location location)
 {
-  return { (uint16_t)(location.address+row.size()), updateBlockLimitWriteOps(getStorageAPI(), location.address, &*row, row.end(), location.writesRemaining) };
-}
-
-static inline write_location write(table_value_iterator it, write_location location)
-{
-  while (location.writesRemaining>0U && !it.at_end())
+  while (location.writesRemaining>0U && pStart!=pEnd)
   {
-    location = write(it.operator*(), location);
-    ++it;
-  }
-  return location;
-}
-
-static inline write_location write(table_axis_iterator it, write_location location)
-{
-  while (location.writesRemaining>0U && !it.at_end())
-  {
-    if (update(getStorageAPI(), location.address, it.operator*())) {
+    if (update(externalApi, location.address, *pStart))
+    {
       --location.writesRemaining;
     }
     ++location.address;
-    ++it;
+    ++pStart;
   }
   return location;
 }
 
-static inline uint16_t writeTable(table3d_t *pTable, TableType key, uint16_t address, uint16_t writesRemaining)
+template <typename TTable>
+static inline uint16_t writeTable(const TTable &table, uint16_t address, uint16_t writesRemaining)
 {
-  return write(y_rbegin(pTable, key), 
-                write(x_begin(pTable, key), 
-                  write(rows_begin(pTable, key), { address, writesRemaining }))).writesRemaining;
+  return write_range(table.axisY.crbegin(), table.axisY.crend(), // NOTE: Y-axis is reversed for reasons that no longer apply, but we preserve that for backwards compatibility
+            write_range(table.axisX.cbegin(), table.axisX.cend(), 
+              write_range(table.values.cbegin(), table.values.cend(), { address, writesRemaining }))).writesRemaining;
 }
 
 //  ================================= End write support ===============================
@@ -248,7 +294,7 @@ void savePage(uint8_t pageNum)
       | Fuel table (See storage.h for data layout) - Page 1
       | 16x16 table itself + the 16 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&fuelTable, decltype(fuelTable)::type_key, EEPROM_CONFIG1_MAP, writesRemaining);
+      writesRemaining = writeTable(fuelTable, EEPROM_CONFIG1_MAP, writesRemaining);
       break;
 
     case veSetPage:
@@ -264,7 +310,7 @@ void savePage(uint8_t pageNum)
       | Ignition table (See storage.h for data layout) - Page 1
       | 16x16 table itself + the 16 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&ignitionTable, decltype(ignitionTable)::type_key, EEPROM_CONFIG3_MAP, writesRemaining);
+      writesRemaining = writeTable(ignitionTable, EEPROM_CONFIG3_MAP, writesRemaining);
       break;
 
     case ignSetPage:
@@ -280,7 +326,7 @@ void savePage(uint8_t pageNum)
       | AFR table (See storage.h for data layout) - Page 5
       | 16x16 table itself + the 16 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&afrTable, decltype(afrTable)::type_key, EEPROM_CONFIG5_MAP, writesRemaining);
+      writesRemaining = writeTable(afrTable, EEPROM_CONFIG5_MAP, writesRemaining);
       break;
 
     case afrSetPage:
@@ -296,9 +342,9 @@ void savePage(uint8_t pageNum)
       | Boost and vvt tables (See storage.h for data layout) - Page 8
       | 8x8 table itself + the 8 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&boostTable, decltype(boostTable)::type_key, EEPROM_CONFIG7_MAP1, writesRemaining);
-      writesRemaining = writeTable(&vvtTable, decltype(vvtTable)::type_key, EEPROM_CONFIG7_MAP2, writesRemaining);
-      writesRemaining = writeTable(&stagingTable, decltype(stagingTable)::type_key, EEPROM_CONFIG7_MAP3, writesRemaining);
+      writesRemaining = writeTable(boostTable, EEPROM_CONFIG7_MAP1, writesRemaining);
+      writesRemaining = writeTable(vvtTable, EEPROM_CONFIG7_MAP2, writesRemaining);
+      writesRemaining = writeTable(stagingTable, EEPROM_CONFIG7_MAP3, writesRemaining);
       break;
 
     case seqFuelPage:
@@ -306,7 +352,7 @@ void savePage(uint8_t pageNum)
       | Fuel trim tables (See storage.h for data layout) - Page 9
       | 6x6 tables itself + the 6 values along each of the axis
       -----------------------------------------------------*/
-#define WRITE_TRIM_TABLE(index) writeTable(&trimTables[index-1U], trimTable3d::type_key, EEPROM_CONFIG8_MAP ## index, writesRemaining)
+#define WRITE_TRIM_TABLE(index) writeTable(trimTables[index-1U], EEPROM_CONFIG8_MAP ## index, writesRemaining)
       writesRemaining = WRITE_TRIM_TABLE(1);
 #if INJ_CHANNELS >= 2
       writesRemaining = WRITE_TRIM_TABLE(2);
@@ -352,7 +398,7 @@ void savePage(uint8_t pageNum)
       | Fuel table 2 (See storage.h for data layout)
       | 16x16 table itself + the 16 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&fuelTable2, decltype(fuelTable2)::type_key, EEPROM_CONFIG11_MAP, writesRemaining);
+      writesRemaining = writeTable(fuelTable2, EEPROM_CONFIG11_MAP, writesRemaining);
       break;
 
     case wmiMapPage:
@@ -362,9 +408,9 @@ void savePage(uint8_t pageNum)
       | 8x8 VVT2 table + the 8 values along each of the axis
       | 4x4 Dwell table itself + the 4 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&wmiTable, decltype(wmiTable)::type_key, EEPROM_CONFIG12_MAP, writesRemaining);
-      writesRemaining = writeTable(&vvt2Table, decltype(vvt2Table)::type_key, EEPROM_CONFIG12_MAP2, writesRemaining);
-      writesRemaining = writeTable(&dwellTable, decltype(dwellTable)::type_key, EEPROM_CONFIG12_MAP3, writesRemaining);
+      writesRemaining = writeTable(wmiTable, EEPROM_CONFIG12_MAP, writesRemaining);
+      writesRemaining = writeTable(vvt2Table, EEPROM_CONFIG12_MAP2, writesRemaining);
+      writesRemaining = writeTable(dwellTable, EEPROM_CONFIG12_MAP3, writesRemaining);
       break;
       
     case progOutsPage:
@@ -379,7 +425,7 @@ void savePage(uint8_t pageNum)
       | Ignition table (See storage.h for data layout) - Page 1
       | 16x16 table itself + the 16 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&ignitionTable2, decltype(ignitionTable2)::type_key, EEPROM_CONFIG14_MAP, writesRemaining);
+      writesRemaining = writeTable(ignitionTable2, EEPROM_CONFIG14_MAP, writesRemaining);
       break;
 
     case boostvvtPage2:
@@ -387,7 +433,7 @@ void savePage(uint8_t pageNum)
       | Boost duty cycle lookuptable (See storage.h for data layout) - Page 15
       | 8x8 table itself + the 8 values along each of the axis
       -----------------------------------------------------*/
-      writesRemaining = writeTable(&boostTableLookupDuty, decltype(boostTableLookupDuty)::type_key, EEPROM_CONFIG15_MAP, writesRemaining);
+      writesRemaining = writeTable(boostTableLookupDuty, EEPROM_CONFIG15_MAP, writesRemaining);
 
       /*---------------------------------------------------
       | Config page 15 (See storage.h for data layout)
@@ -414,68 +460,55 @@ static inline uint16_t load_range(uint16_t address, byte *pFirst, const byte *pL
   return loadBlock(getStorageAPI(), address, pFirst, pLast);
 }
 
-static inline uint16_t load(table_row_iterator row, uint16_t address)
+template <typename Iter>
+static inline uint16_t load_range(Iter pStart, Iter pEnd, uint16_t address)
 {
-  return load_range(address, &*row, row.end());
-}
-
-static inline uint16_t load(table_value_iterator it, uint16_t address)
-{
-  while (!it.at_end())
+  while (pStart!=pEnd)
   {
-    address = load(*it, address); // cppcheck-suppress misra-c2012-17.2
-    ++it;
-  }
-  return address; 
-}
-
-static inline uint16_t load(table_axis_iterator it, uint16_t address)
-{
-  while (!it.at_end())
-  {
-    *it = getStorageAPI().read(address);
+    *pStart = externalApi.read(address);
+    ++pStart;
     ++address;
-    ++it;
   }
-  return address;    
+  return address;
 }
 
-
-static inline uint16_t loadTable(table3d_t *pTable, TableType key, uint16_t address)
+template <typename TTable>
+static inline uint16_t loadTable(TTable &table, uint16_t address)
 {
-  return load(y_rbegin(pTable, key),
-                load(x_begin(pTable, key), 
-                  load(rows_begin(pTable, key), address)));
+  return load_range(table.axisY.rbegin(), table.axisY.rend(), // NOTE: Y-axis is reversed for reasons that no longer apply, but we preserve that for backwards compatibility
+            load_range(table.axisX.begin(), table.axisX.end(), 
+              load_range(table.values.begin(), table.values.end(), address)));
 }
+
 
 //  ================================= End internal read support ===============================
 
 void loadAllPages(void)
 {
-  (void)loadTable(&fuelTable, decltype(fuelTable)::type_key, EEPROM_CONFIG1_MAP);
+  (void)loadTable(fuelTable, EEPROM_CONFIG1_MAP);
   (void)load_range(EEPROM_CONFIG2_START, (byte *)&configPage2, (byte *)&configPage2+sizeof(configPage2));
   
   //*********************************************************************************************************************************************************************************
   //IGNITION CONFIG PAGE (2)
 
-  (void)loadTable(&ignitionTable, decltype(ignitionTable)::type_key, EEPROM_CONFIG3_MAP);
+  (void)loadTable(ignitionTable, EEPROM_CONFIG3_MAP);
   (void)load_range(EEPROM_CONFIG4_START, (byte *)&configPage4, (byte *)&configPage4+sizeof(configPage4));
 
   //*********************************************************************************************************************************************************************************
   //AFR TARGET CONFIG PAGE (3)
 
-  (void)loadTable(&afrTable, decltype(afrTable)::type_key, EEPROM_CONFIG5_MAP);
+  (void)loadTable(afrTable, EEPROM_CONFIG5_MAP);
   (void)load_range(EEPROM_CONFIG6_START, (byte *)&configPage6, (byte *)&configPage6+sizeof(configPage6));
 
   //*********************************************************************************************************************************************************************************
   // Boost and vvt tables load
-  (void)loadTable(&boostTable, decltype(boostTable)::type_key, EEPROM_CONFIG7_MAP1);
-  (void)loadTable(&vvtTable, decltype(vvtTable)::type_key,  EEPROM_CONFIG7_MAP2);
-  (void)loadTable(&stagingTable, decltype(stagingTable)::type_key, EEPROM_CONFIG7_MAP3);
+  (void)loadTable(boostTable, EEPROM_CONFIG7_MAP1);
+  (void)loadTable(vvtTable,  EEPROM_CONFIG7_MAP2);
+  (void)loadTable(stagingTable, EEPROM_CONFIG7_MAP3);
 
   //*********************************************************************************************************************************************************************************
   // Fuel trim tables load
-#define LOAD_TRIM_TABLE(index) (void)loadTable(&trimTables[index-1U], trimTable3d::type_key, EEPROM_CONFIG8_MAP ## index)
+#define LOAD_TRIM_TABLE(index) (void)loadTable(trimTables[index-1U], EEPROM_CONFIG8_MAP ## index)
   LOAD_TRIM_TABLE(1);
 #if INJ_CHANNELS >= 2
   LOAD_TRIM_TABLE(2);
@@ -510,13 +543,13 @@ void loadAllPages(void)
 
   //*********************************************************************************************************************************************************************************
   //Fuel table 2 (See storage.h for data layout)
-  (void)loadTable(&fuelTable2, decltype(fuelTable2)::type_key, EEPROM_CONFIG11_MAP);
+  (void)loadTable(fuelTable2, EEPROM_CONFIG11_MAP);
 
   //*********************************************************************************************************************************************************************************
   // WMI, VVT2 and Dwell table load
-  (void)loadTable(&wmiTable, decltype(wmiTable)::type_key, EEPROM_CONFIG12_MAP);
-  (void)loadTable(&vvt2Table, decltype(vvt2Table)::type_key, EEPROM_CONFIG12_MAP2);
-  (void)loadTable(&dwellTable, decltype(dwellTable)::type_key, EEPROM_CONFIG12_MAP3);
+  (void)loadTable(wmiTable, EEPROM_CONFIG12_MAP);
+  (void)loadTable(vvt2Table, EEPROM_CONFIG12_MAP2);
+  (void)loadTable(dwellTable, EEPROM_CONFIG12_MAP3);
 
   //*********************************************************************************************************************************************************************************
   //CONFIG PAGE (13)
@@ -525,11 +558,11 @@ void loadAllPages(void)
   //*********************************************************************************************************************************************************************************
   //SECOND IGNITION CONFIG PAGE (14)
 
-  (void)loadTable(&ignitionTable2, decltype(ignitionTable2)::type_key, EEPROM_CONFIG14_MAP);
+  (void)loadTable(ignitionTable2, EEPROM_CONFIG14_MAP);
 
   //*********************************************************************************************************************************************************************************
   //CONFIG PAGE (15) + boost duty lookup table (LUT)
-  (void)loadTable(&boostTableLookupDuty, decltype(boostTableLookupDuty)::type_key, EEPROM_CONFIG15_MAP);
+  (void)loadTable(boostTableLookupDuty, EEPROM_CONFIG15_MAP);
   (void)load_range(EEPROM_CONFIG15_START, (byte *)&configPage15, (byte *)&configPage15+sizeof(configPage15));  
 
   //*********************************************************************************************************************************************************************************
@@ -540,14 +573,14 @@ void loadAllCalibrationTables(void)
   // If you modify this function be sure to also modify saveAllCalibrationTables();
   // it should be a mirror image of this function.
 
-  (void)loadObject(getStorageAPI(), EEPROM_CALIBRATION_O2_BINS, o2CalibrationTable.axis);
-  (void)loadObject(getStorageAPI(), EEPROM_CALIBRATION_O2_VALUES, o2CalibrationTable.values);
+  (void)loadObject(getStorageAPI(), getSensorCalibrationAddress(SensorCalibrationTable::O2Sensor, SensorCalibrationTableElement::Bins), o2CalibrationTable.axis);
+  (void)loadObject(getStorageAPI(), getSensorCalibrationAddress(SensorCalibrationTable::O2Sensor, SensorCalibrationTableElement::Values), o2CalibrationTable.values);
   
-  (void)loadObject(getStorageAPI(), EEPROM_CALIBRATION_IAT_BINS, iatCalibrationTable.axis);
-  (void)loadObject(getStorageAPI(), EEPROM_CALIBRATION_IAT_VALUES, iatCalibrationTable.values);
+  (void)loadObject(getStorageAPI(), getSensorCalibrationAddress(SensorCalibrationTable::IntakeAirTempSensor, SensorCalibrationTableElement::Bins), iatCalibrationTable.axis);
+  (void)loadObject(getStorageAPI(), getSensorCalibrationAddress(SensorCalibrationTable::IntakeAirTempSensor, SensorCalibrationTableElement::Values), iatCalibrationTable.values);
 
-  (void)loadObject(getStorageAPI(), EEPROM_CALIBRATION_CLT_BINS, cltCalibrationTable.axis);
-  (void)loadObject(getStorageAPI(), EEPROM_CALIBRATION_CLT_VALUES, cltCalibrationTable.values);
+  (void)loadObject(getStorageAPI(), getSensorCalibrationAddress(SensorCalibrationTable::CoolantSensor, SensorCalibrationTableElement::Bins), cltCalibrationTable.axis);
+  (void)loadObject(getStorageAPI(), getSensorCalibrationAddress(SensorCalibrationTable::CoolantSensor, SensorCalibrationTableElement::Values), cltCalibrationTable.values);
 }
 
 /** Write calibration tables to EEPROM.
@@ -568,53 +601,35 @@ void saveCalibrationTable(SensorCalibrationTable sensor)
 {
   if(sensor == SensorCalibrationTable::O2Sensor)
   {
-    updateObject(getStorageAPI(), o2CalibrationTable.axis, EEPROM_CALIBRATION_O2_BINS);
-    updateObject(getStorageAPI(), o2CalibrationTable.values, EEPROM_CALIBRATION_O2_VALUES);
+    updateObject(getStorageAPI(), o2CalibrationTable.axis, getSensorCalibrationAddress(SensorCalibrationTable::O2Sensor, SensorCalibrationTableElement::Bins));
+    updateObject(getStorageAPI(), o2CalibrationTable.values, getSensorCalibrationAddress(SensorCalibrationTable::O2Sensor, SensorCalibrationTableElement::Values));
   }
   else if(sensor == SensorCalibrationTable::IntakeAirTempSensor)
   {
-    updateObject(getStorageAPI(), iatCalibrationTable.axis, EEPROM_CALIBRATION_IAT_BINS);
-    updateObject(getStorageAPI(), iatCalibrationTable.values, EEPROM_CALIBRATION_IAT_VALUES);
+    updateObject(getStorageAPI(), iatCalibrationTable.axis, getSensorCalibrationAddress(SensorCalibrationTable::IntakeAirTempSensor, SensorCalibrationTableElement::Bins));
+    updateObject(getStorageAPI(), iatCalibrationTable.values, getSensorCalibrationAddress(SensorCalibrationTable::IntakeAirTempSensor, SensorCalibrationTableElement::Values));
   }
   else if(sensor == SensorCalibrationTable::CoolantSensor)
   {
-    updateObject(getStorageAPI(), cltCalibrationTable.axis, EEPROM_CALIBRATION_CLT_BINS);
-    updateObject(getStorageAPI(), cltCalibrationTable.values, EEPROM_CALIBRATION_CLT_VALUES);
+    updateObject(getStorageAPI(), cltCalibrationTable.axis, getSensorCalibrationAddress(SensorCalibrationTable::CoolantSensor, SensorCalibrationTableElement::Bins));
+    updateObject(getStorageAPI(), cltCalibrationTable.values, getSensorCalibrationAddress(SensorCalibrationTable::CoolantSensor, SensorCalibrationTableElement::Values));
   } else {
     // Unknown sensor identifier - do nothing but keep MISRA checker happy
   }
-}
-
-TESTABLE_INLINE_STATIC uint16_t getSensorCalibrationCrcAddress(SensorCalibrationTable sensor) {
-  constexpr uint16_t EEPROM_CALIBRATION_CLT_CRC = 3674;
-  constexpr uint16_t EEPROM_CALIBRATION_IAT_CRC = 3678;
-  constexpr uint16_t EEPROM_CALIBRATION_O2_CRC = 3682;
-
-  switch(sensor)
-  {
-    case SensorCalibrationTable::O2Sensor:
-      return EEPROM_CALIBRATION_O2_CRC;
-    case SensorCalibrationTable::IntakeAirTempSensor:
-      return EEPROM_CALIBRATION_IAT_CRC;
-    case SensorCalibrationTable::CoolantSensor:
-    default: //Obviously should never happen
-      return EEPROM_CALIBRATION_CLT_CRC;
-  }
-  return EEPROM_CALIBRATION_CLT_CRC;
 }
 
 // LCOV_EXCL_START
 // Exclude simple wrappers from code coverage
 void saveCalibrationCrc(SensorCalibrationTable sensor, uint32_t calibrationCRC)
 {
-  updateObject(getStorageAPI(), calibrationCRC, getSensorCalibrationCrcAddress(sensor));
+  updateObject(getStorageAPI(), calibrationCRC, getSensorCalibrationAddress(sensor, SensorCalibrationTableElement::Crc));
 }
 
 /** Retrieves and returns the 4 byte CRC32 checksum for a given calibration page from EEPROM. */
 uint32_t loadCalibrationCrc(SensorCalibrationTable sensor)
 {
   uint32_t crc32_val;
-  return loadObject(getStorageAPI(), getSensorCalibrationCrcAddress(sensor), crc32_val);
+  return loadObject(getStorageAPI(), getSensorCalibrationAddress(sensor, SensorCalibrationTableElement::Crc), crc32_val);
 }
 // LCOV_EXCL_STOP
 

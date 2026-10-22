@@ -1,18 +1,18 @@
-#include <Arduino.h>
 #include <unity.h>
 #include "scheduler.h"
 #include "../test_utils.h"
-#include "src/stdlib/type_traits.h"
+#include <type_traits>
+#include "statuses.h"
 
-
-using raw_counter_t = type_traits::remove_reference<IgnitionSchedule::counter_t>::type;
-using raw_compare_t = type_traits::remove_reference<IgnitionSchedule::compare_t>::type;
+using raw_counter_t = std::remove_reference<IgnitionSchedule::counter_t>::type;
+using raw_compare_t = std::remove_reference<IgnitionSchedule::compare_t>::type;
 
 struct test_subject_t
 {
   raw_counter_t counterReg = {101};
   raw_compare_t compareReg = {100};
   IgnitionSchedule schedule;
+  statuses current;
   test_subject_t() : schedule(counterReg, compareReg) { }
 #if defined(NATIVE_BOARD)
   test_subject_t(const test_subject_t &other) 
@@ -34,12 +34,12 @@ void test_adjust_crank_angle_pending_below_minrevolutions()
   auto subject = setupSubject();
 
   subject.schedule._status = PENDING;
-  currentStatus.startRevolutions = 0;
+  subject.current.startRevolutions = 0;
 
   subject.schedule.dischargeAngle = 359;
 
   // Should do nothing.
-  adjustCrankAngle(subject.schedule, 180);
+  adjustCrankAngle(subject.current, subject.schedule, 180);
   TEST_ASSERT_EQUAL(100, subject.schedule._compare);
   TEST_ASSERT_EQUAL(101, subject.schedule._counter);
 }
@@ -49,28 +49,28 @@ void test_adjust_crank_angle_pending_above_minrevolutions()
 {
   auto subject = setupSubject();
   subject.schedule._status = PENDING;  
-  currentStatus.startRevolutions = 2000;
+  subject.current.startRevolutions = 2000;
 
   constexpr uint16_t newCrankAngle = 180;
   constexpr uint16_t chargeAngle = 359;
   subject.schedule.chargeAngle = chargeAngle;
 
-  adjustCrankAngle(subject.schedule, newCrankAngle);
+  adjustCrankAngle(subject.current, subject.schedule, newCrankAngle);
   TEST_ASSERT_EQUAL(101, subject.schedule._counter);
-  TEST_ASSERT_EQUAL(subject.schedule._counter+uS_TO_TIMER_COMPARE(angleToTimeMicroSecPerDegree(chargeAngle-newCrankAngle)), subject.schedule._compare);
+  TEST_ASSERT_EQUAL(subject.schedule._counter+uS_TO_TIMER_COMPARE(angleToTime(chargeAngle-newCrankAngle)), subject.schedule._compare);
 }
 
 void test_adjust_crank_angle_pending_above_minrevolutions_negative_angle()
 {
   auto subject = setupSubject();
   subject.schedule._status = PENDING;  
-  currentStatus.startRevolutions = 2000;
+  subject.current.startRevolutions = 2000;
 
   constexpr uint16_t newCrankAngle = 180;
   constexpr uint16_t chargeAngle = 100;
   subject.schedule.chargeAngle = chargeAngle;
 
-  adjustCrankAngle(subject.schedule, newCrankAngle);
+  adjustCrankAngle(subject.current, subject.schedule, newCrankAngle);
   TEST_ASSERT_EQUAL(101, subject.schedule._counter);
   TEST_ASSERT_EQUAL(100, subject.schedule._compare);
 }
@@ -84,9 +84,9 @@ void test_adjust_crank_angle_running()
   constexpr uint16_t chargeAngle = 359;
   subject.schedule.dischargeAngle = chargeAngle;
 
-  adjustCrankAngle(subject.schedule, newCrankAngle);
+  adjustCrankAngle(subject.current, subject.schedule, newCrankAngle);
   TEST_ASSERT_EQUAL(101, subject.schedule._counter);
-  TEST_ASSERT_EQUAL(subject.schedule._counter+uS_TO_TIMER_COMPARE(angleToTimeMicroSecPerDegree(chargeAngle-newCrankAngle)), subject.schedule._compare);
+  TEST_ASSERT_EQUAL(subject.schedule._counter+uS_TO_TIMER_COMPARE(angleToTime(chargeAngle-newCrankAngle)), subject.schedule._compare);
 }
 
 void test_adjust_crank_angle_running_negative_angle()
@@ -98,7 +98,7 @@ void test_adjust_crank_angle_running_negative_angle()
   constexpr uint16_t chargeAngle = 179;
   subject.schedule.dischargeAngle = chargeAngle;
 
-  adjustCrankAngle(subject.schedule, newCrankAngle);
+  adjustCrankAngle(subject.current, subject.schedule, newCrankAngle);
   TEST_ASSERT_EQUAL(101, subject.schedule._counter);
   TEST_ASSERT_EQUAL(100, subject.schedule._compare);
 }

@@ -9,10 +9,11 @@ A full copy of the license may be found in the projects root directory
 #include "globals.h"
 #include "comms.h"
 #include "comms_secondary.h"
+#include "elapsed_time.h"
 #include "storage.h"
 #include "maths.h"
 #include "decoders.h"
-#include "TS_CommandButtonHandler.h"
+#include "src/controllers/tsCommand/tsCommandController.h"
 #include "pages.h"
 #include "page_crc.h"
 #include "logger.h"
@@ -28,6 +29,7 @@ A full copy of the license may be found in the projects root directory
 #include "units.h"
 #include "sensors.h"
 #include "resetControl.h"
+#include "preprocessor.h"
 
 /** @defgroup group-serial-comms-impl Serial comms implementation
  * @{
@@ -103,8 +105,15 @@ static uint32_t SDreadCompletedSectors = 0;
 static uint8_t serialPayload[TS_SERIAL_BUFFER_SIZE]; //!< Serial payload buffer. */
 static uint16_t serialPayloadLength = 0; //!< How many bytes in serialPayload were received or sent */
 Stream* pPrimarySerial;
-static uint32_t deferEEPROMWritesUntil = 0; //!< Point in time that we can resume writing pages
+static uint32_t deferEEPROMWritesStart = 0; //!< Time (µS) at which the current EEPROM write deferral began
+static uint32_t deferEEPROMWritesDelay = 0; //!< How long (µS) after deferEEPROMWritesStart before page writing can resume
 static constexpr uint32_t EEPROM_DEFER_DELAY = MICROS_PER_SEC; //1.0 second pause after large comms before writing to EEPROM
+
+/** @brief Defer storage writes for @p delay_uS from now. */
+static void setStorageWriteTimeout(uint32_t delay_uS) {
+  deferEEPROMWritesStart = micros();
+  deferEEPROMWritesDelay = delay_uS;
+}
 
 #if defined(CORE_AVR)
 #pragma GCC push_options
@@ -115,7 +124,7 @@ static constexpr uint32_t EEPROM_DEFER_DELAY = MICROS_PER_SEC; //1.0 second paus
 /** @brief Has the current receive operation timed out? */
 bool isRxTimeout(void) 
 {
-  return (millis() - serialReceiveStartTime) > SERIAL_TIMEOUT;
+  return hasIntervalElapsed(millis(), serialReceiveStartTime, SERIAL_TIMEOUT);
 }
 
 // ====================================== Endianness Support =============================
@@ -306,8 +315,19 @@ static void sendReturnCodeMsg(byte returnCode)
 
 // ====================================== Command/Action Support =============================
 
-// The functions in this section are abstracted out to prevent enlarging callers stack frame, 
+// The functions in this section are abstracted out to prevent enlarging callers stack frame,
 // which in turn throws off free ram reporting.
+
+/** @brief Add two 16-bit values in 32-bit arithmetic so the sum cannot wrap.
+ *
+ * On AVR `int` is 16-bit, so `a + b` for two uint16_t operands is evaluated at
+ * 16 bits and can overflow. Widening to uint32_t first guarantees an exact sum,
+ * which matters when the result is used in a bounds check against attacker-supplied
+ * offset/length values.
+ */
+static inline uint32_t addWithoutOverflow(uint16_t a, uint16_t b) {
+  return (uint32_t)a + (uint32_t)b;
+}
 
 /**
  * @brief Update a pages contents from a buffer
@@ -321,13 +341,13 @@ static void sendReturnCodeMsg(byte returnCode)
  */
 static bool updatePageValues(uint8_t pageNum, uint16_t offset, const byte *buffer, uint16_t length)
 {
-  if ( (offset + length) <= getPageSize(pageNum) )
+  if ( addWithoutOverflow(offset, length) <= getPageSize(pageNum) )
   {
     for(uint16_t i = 0; i < length; i++)
     {
       setPageValue(pageNum, (offset + i), buffer[i]);
     }
-    setStorageWriteTimeout(micros() + EEPROM_DEFER_DELAY);
+    setStorageWriteTimeout(EEPROM_DEFER_DELAY);
     return true;
   }
 
@@ -434,7 +454,7 @@ static uint8_t toTemperature(byte lo, byte hi)
   tempValue = tempValue / 10; //TS sends values multiplied by 10 so divide back to whole degrees. 
   tempValue = ((tempValue - 32) * 5) / 9; //Convert from F to C
   //Apply the temp offset and check that it results in all values being positive
-  return max( temperatureAddOffset(tempValue), (uint8_t)0U );
+  return (std::max)( temperatureAddOffset(tempValue), (uint8_t)0U );
 }
 
 /**
@@ -612,7 +632,7 @@ void processSerialCommand(void)
 
     case 'B': // Same as above, but for the comms compat mode. Slows down the burn rate and increases the defer time
       currentStatus.commCompat = true; //Force the compat mode
-      setStorageWriteTimeout(deferEEPROMWritesUntil + (EEPROM_DEFER_DELAY/4U)); //Add 25% more to the EEPROM defer time
+      deferEEPROMWritesDelay += EEPROM_DEFER_DELAY/4U; //Add 25% more to the EEPROM defer time
       burnSinglePage(serialPayload[2]);      
       sendReturnCodeMsg(SERIAL_RC_BURN_OK);
       break;
@@ -633,7 +653,7 @@ void processSerialCommand(void)
     }
 
     case 'E': // receive command button commands
-      (void)TS_CommandButtonsHandler(word(serialPayload[1], serialPayload[2]));
+      (void)handleTsCommand(word(serialPayload[1], serialPayload[2]), currentStatus, configPage2);
       sendReturnCodeMsg(SERIAL_RC_OK);
       break;
 
@@ -739,10 +759,17 @@ void processSerialCommand(void)
       //2 - Length
       uint16_t length = word(serialPayload[6], serialPayload[5]);
 
-      //Setup the transmit buffer
-      serialPayload[0] = SERIAL_RC_OK;
-      loadPageValuesToBuffer(serialPayload[2], word(serialPayload[4], serialPayload[3]), &serialPayload[1], length);
-      sendSerialPayloadNonBlocking(length + 1U);
+      if (length < _countof(serialPayload))
+      {
+        //Setup the transmit buffer
+        serialPayload[0] = SERIAL_RC_OK;
+        loadPageValuesToBuffer(serialPayload[2], word(serialPayload[4], serialPayload[3]), &serialPayload[1], length);
+        sendSerialPayloadNonBlocking(length + 1U);
+      }
+      else
+      {
+        sendReturnCodeMsg(SERIAL_RC_RANGE_ERR);
+      }
       break;
     }
 
@@ -763,8 +790,15 @@ void processSerialCommand(void)
 
       if(cmd == SEND_OUTPUT_CHANNELS) //Send output channels command 0x30 is 48dec
       {
-        generateLiveValues(offset, length);
-        sendSerialPayloadNonBlocking(length + 1U);
+        if (length < _countof(serialPayload))
+        {
+          generateLiveValues(offset, length);
+          sendSerialPayloadNonBlocking(length + 1U);
+        }
+        else
+        {
+          sendReturnCodeMsg(SERIAL_RC_RANGE_ERR);
+        }
       }
       else if(cmd == 0x0fU)
       {
@@ -934,7 +968,7 @@ void processSerialCommand(void)
       #endif
 
         while (primarySerial.available() == 0) { }
-        digitalWrite(pinResetControl, LOW);
+        digitalWrite(pinNumbers.pinResetControl, LOW);
       }
       else
       {
@@ -1142,7 +1176,7 @@ void sendCompositeLog(void)
     //If the buffer is not yet full but TS has timed out, pad the rest of the buffer with 0s
     while(toothHistoryIndex < _countof(toothHistory))
     {
-      toothHistory[toothHistoryIndex] = toothHistory[toothHistoryIndex-1U]; //Composite logger needs a realistic time value to display correctly. Copy the last value
+      toothHistory[toothHistoryIndex] = toothHistoryIndex == 0U ? 0U : toothHistory[toothHistoryIndex-1U]; //Composite logger needs a realistic time value to display correctly. Copy the last value
       compositeLogHistory[toothHistoryIndex] = 0U;
       toothHistoryIndex++;
     }
@@ -1188,12 +1222,8 @@ void sendCompositeLog(void)
   (void)serialWrite(CRC32_val);
 }
 
-void setStorageWriteTimeout(uint32_t time) {
-  deferEEPROMWritesUntil = time;
-}
-
 bool storageWriteTimeoutExpired(void) {
-  return micros() > deferEEPROMWritesUntil;
+  return hasIntervalElapsed(micros(), deferEEPROMWritesStart, deferEEPROMWritesDelay);
 }
 
 #if defined(CORE_AVR)

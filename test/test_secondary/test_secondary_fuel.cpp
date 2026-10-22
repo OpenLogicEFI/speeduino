@@ -45,8 +45,8 @@ static void __attribute__((noinline)) test_fuel_mode_cap_UINT8_MAX(uint8_t mode)
     table3d16RpmLoad lookupTable;
 
     fill_table_values(lookupTable, SIMPLE_LOAD_VALUE);
-    populate_table_axis_P(lookupTable.axisX.begin(), tempXAxis);
-    populate_table_axis_P(lookupTable.axisY.begin(), tempYAxis);
+    populate_table_axis_P(lookupTable.axisX, tempXAxis);
+    populate_table_axis_P(lookupTable.axisY, tempYAxis);
 
     page10.fuel2Mode = mode;    
     page10.fuel2Algorithm = LOAD_SOURCE_MAP;
@@ -64,8 +64,8 @@ static constexpr int8_t SIMPLE_VE1 = 75;
 
 static void __attribute__((noinline)) setup_test_fuel_mode_simple(config10 &page10, statuses &current, table3d16RpmLoad &lookupTable, uint8_t mode) {
     fill_table_values(lookupTable, SIMPLE_LOAD_VALUE);
-    populate_table_axis_P(lookupTable.axisX.begin(), tempXAxis);
-    populate_table_axis_P(lookupTable.axisY.begin(), tempYAxis);
+    populate_table_axis_P(lookupTable.axisX, tempXAxis);
+    populate_table_axis_P(lookupTable.axisY, tempYAxis);
 
     page10.fuel2Mode = mode;    
     page10.fuel2Algorithm = LOAD_SOURCE_MAP;
@@ -113,8 +113,8 @@ static void __attribute__((noinline)) setup_test_fuel_mode_cond_switch(config10 
 
     current.MAP = SWITCHED_LOAD; //Load source value
     current.setRpm( 3500U);
-    current.TPS = 50;
-    current.ethanolPct = 50;
+    current.TPS = 75;
+    current.ethanolPct = 85;
 }
 
 static void __attribute__((noinline)) test_fuel_mode_cond_switch_negative(uint8_t cond, uint16_t trigger) {
@@ -140,27 +140,35 @@ static void __attribute__((noinline)) test_fuel_mode_cond_switch_positive(uint8_
 }
 
 static void __attribute__((noinline)) test_fuel_mode_cond_switch_rpm(void) {
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_RPM, 3499);    
-    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_RPM, 3501);    
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_RPM, 3499);    
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_RPM, 3499);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_RPM, 3500); // Equality must not activate the table
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_RPM, 3501);
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_RPM, 0);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_RPM, UINT16_MAX);
 }
 
 static void __attribute__((noinline)) test_fuel_mode_cond_switch_tps(void) {
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_TPS, 49);    
-    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_TPS, 51);    
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_TPS, 49);    
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_TPS, 74);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_TPS, 75); // Equality must not activate the table
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_TPS, 76);
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_TPS, 0);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_TPS, UINT16_MAX);
 }
 
 static void __attribute__((noinline)) test_fuel_mode_cond_switch_map(void) {
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_MAP, 49);    
-    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_MAP, 51);    
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_MAP, 49);    
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_MAP, 49);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_MAP, 50); // Equality must not activate the table
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_MAP, 51);
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_MAP, 0);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_MAP, UINT16_MAX);
 }
 
 static void __attribute__((noinline)) test_fuel_mode_cond_switch_ethanol_pct(void) {
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_ETH, 49);    
-    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_ETH, 51);    
-    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_ETH, 49);    
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_ETH, 84);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_ETH, 85); // Equality must not activate the table
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_ETH, 86);
+    test_fuel_mode_cond_switch_positive(FUEL2_CONDITION_ETH, 0);
+    test_fuel_mode_cond_switch_negative(FUEL2_CONDITION_ETH, UINT16_MAX);
 }
 
 static void __attribute__((noinline)) test_fuel_mode_input_switch(void) {
@@ -171,22 +179,22 @@ static void __attribute__((noinline)) test_fuel_mode_input_switch(void) {
     fill_table_values(lookupTable, SWITCHED_VE2);
 
     page10.fuel2InputPolarity = HIGH;
-    pinFuel2Input = 3;   
-    pinMode(pinFuel2Input, OUTPUT);
+    pinNumbers.pinFuel2Input = 3;   
+    pinMode(pinNumbers.pinFuel2Input, OUTPUT);
 
     // On
-    digitalWrite(pinFuel2Input, page10.fuel2InputPolarity);
+    digitalWrite(pinNumbers.pinFuel2Input, page10.fuel2InputPolarity);
     calculateSecondaryFuel(page10, lookupTable, current);
     assert_2nd_fuel_is_on(current, SIMPLE_VE1, SWITCHED_VE2, SWITCHED_VE2);
 
     // Off
-    digitalWrite(pinFuel2Input, !page10.fuel2InputPolarity);
+    digitalWrite(pinNumbers.pinFuel2Input, !page10.fuel2InputPolarity);
     current.VE = current.VE1;
     calculateSecondaryFuel(page10, lookupTable, current);
     assert_2nd_fuel_is_off(current, SIMPLE_VE1);
 
     // On again
-    digitalWrite(pinFuel2Input, page10.fuel2InputPolarity);
+    digitalWrite(pinNumbers.pinFuel2Input, page10.fuel2InputPolarity);
     calculateSecondaryFuel(page10, lookupTable, current);
     assert_2nd_fuel_is_on(current, SIMPLE_VE1, SWITCHED_VE2, SWITCHED_VE2);
 }

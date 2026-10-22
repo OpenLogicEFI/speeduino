@@ -3,10 +3,10 @@
 #include <unity.h>
 #include "../test_utils.h"
 #include "scheduler.h"
-#include "src/stdlib/type_traits.h"
+#include <type_traits>
 
-using raw_counter_t = type_traits::remove_reference<IgnitionSchedule::counter_t>::type;
-using raw_compare_t = type_traits::remove_reference<IgnitionSchedule::compare_t>::type;
+using raw_counter_t = std::remove_reference<IgnitionSchedule::counter_t>::type;
+using raw_compare_t = std::remove_reference<IgnitionSchedule::compare_t>::type;
 
 static constexpr uint32_t TIMEOUT = 5000U;
 static constexpr uint32_t DURATION = 2000U;
@@ -35,7 +35,7 @@ static void test_fuel_schedule_RUNNING_to_RUNNINGWITHNEXT_Disallow(void) {
     // // Calculate a revolution time that will result in 360° taking longer than MAX_TIMER_PERIOD
     // uint32_t revTime = (uint32_t)MAX_TIMER_PERIOD+(MAX_TIMER_PERIOD/CRANK_ANGLE_MAX_INJ);
     // setAngleConverterRevolutionTime(revTime);
-    // TEST_ASSERT_GREATER_THAN(MAX_TIMER_PERIOD, angleToTimeMicroSecPerDegree((uint16_t)CRANK_ANGLE_MAX_INJ));
+    // TEST_ASSERT_GREATER_THAN(MAX_TIMER_PERIOD, angleToTime((uint16_t)CRANK_ANGLE_MAX_INJ));
     // setFuelScheduleDuration(schedule, TIMEOUT, DURATION);
     // // Should not have changed
     // TEST_ASSERT_EQUAL(INITIAL_COUNTER + uS_TO_TIMER_COMPARE(TIMEOUT), schedule._compare);
@@ -45,7 +45,7 @@ static void test_fuel_schedule_RUNNING_to_RUNNINGWITHNEXT_Disallow(void) {
 
     // // Positive test
     // setAngleConverterRevolutionTime(revTime/2U);
-    // TEST_ASSERT_LESS_THAN(MAX_TIMER_PERIOD, angleToTimeMicroSecPerDegree((uint32_t)CRANK_ANGLE_MAX_INJ));    
+    // TEST_ASSERT_LESS_THAN(MAX_TIMER_PERIOD, angleToTime((uint32_t)CRANK_ANGLE_MAX_INJ));    
     // setFuelScheduleDuration(schedule, TIMEOUT+TIMEOUT_OFFSET, DURATION+DURATION_OFFSET);
     // // Should not have changed
     // TEST_ASSERT_EQUAL(INITIAL_COUNTER + uS_TO_TIMER_COMPARE(TIMEOUT), schedule._compare);

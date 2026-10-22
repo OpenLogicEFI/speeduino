@@ -34,8 +34,8 @@ static TTable setup3dTable(byte valueMarker, byte xMarker, byte yMarker)
     TTable entity;
 
     fill_table_values(entity, valueMarker);
-    populate_table_axis(entity.axisX.begin(), xMarker);
-    populate_table_axis(entity.axisY.begin(), yMarker);
+    populate_table_axis(entity.axisX, xMarker);
+    populate_table_axis(entity.axisY, yMarker);
 
     return entity;
 }
@@ -43,8 +43,8 @@ static TTable setup3dTable(byte valueMarker, byte xMarker, byte yMarker)
 template <typename TTable>
 static entity_t setupTableEntity(TTable &entity)
 {
-    constexpr uint16_t countTableValue = decltype(entity.axisX)::length*decltype(entity.axisY)::length;
-    constexpr uint16_t size = countTableValue+decltype(entity.axisX)::length+decltype(entity.axisY)::length;
+    uint16_t countTableValue = entity.axisX.size()*entity.axisY.size();
+    uint16_t size = countTableValue+entity.axisX.size()+entity.axisY.size();
     return entity_t(&entity, entity.type_key, size);
 }
 
@@ -53,20 +53,20 @@ static void assert_3d_table(const entity_t &entity, const TTable &table, byte va
 {
     char szMsg[64];
     uint16_t offset=0; 
-    uint16_t valueSize = table.values.num_rows*table.values.row_size; 
+    uint16_t valueSize = table.values.size();
     for (; offset<valueSize; ++offset)
     {
-        sprintf(szMsg, "Value %" PRIu16, offset);
+        snprintf(szMsg, _countof(szMsg)-1, "Value %" PRIu16, offset);
         TEST_ASSERT_EQUAL_MESSAGE(valueMarker, getEntityValue(entity, offset), szMsg);
     }
-    for (; offset<valueSize+table.axisX.length; ++offset)
+    for (; offset<valueSize+table.axisX.size(); ++offset)
     {
-        sprintf(szMsg, "XAxis %" PRIu16, offset);
+        snprintf(szMsg, _countof(szMsg)-1, "XAxis %" PRIu16, offset);
         TEST_ASSERT_EQUAL_MESSAGE(xMarker, getEntityValue(entity, offset), szMsg);
     }
-    for (; offset<valueSize+table.axisX.length+table.axisY.length; ++offset)
+    for (; offset<valueSize+table.axisX.size()+table.axisY.size(); ++offset)
     {
-        sprintf(szMsg, "YAxis %" PRIu16, offset);
+        snprintf(szMsg, _countof(szMsg)-1, "YAxis %" PRIu16, offset);
         TEST_ASSERT_EQUAL_MESSAGE(yMarker, getEntityValue(entity, offset), szMsg);
     }
     // Offset is too large
@@ -138,18 +138,18 @@ static void test_setEntityValue_none(void)
 template <typename TTable>
 static void assert_set_3d_table(entity_t entity, const TTable &table, byte valuePre, byte xAxisPre, byte yAxisPre)
 {
-    const uint16_t valueSize = table.values.num_rows*table.values.row_size; 
+    const uint16_t valueSize = table.values.size(); 
     const char valuePost = valuePre+1;
     set_entity_values(entity, 0, valueSize, valuePost);
-    TEST_ASSERT_EACH_EQUAL_CHAR(valuePost, table.values.values, valueSize);
+    TEST_ASSERT_EACH_EQUAL_CHAR(valuePost, table.values.data(), valueSize);
 
     const char xAxisPost = xAxisPre+1;
-    set_entity_values(entity, valueSize, valueSize+table.axisX.length, xAxisPost);
-    TEST_ASSERT_EACH_EQUAL_CHAR(xAxisPost, table.axisX.axis, table.axisX.length);
+    set_entity_values(entity, valueSize, valueSize+table.axisX.size(), xAxisPost);
+    TEST_ASSERT_EACH_EQUAL_CHAR(xAxisPost, table.axisX._M_elems, table.axisX.size());
 
     const char yAxisPost = yAxisPre+1;
-    set_entity_values(entity, valueSize+table.axisX.length, valueSize+table.axisX.length+table.axisY.length, yAxisPost);
-    TEST_ASSERT_EACH_EQUAL_CHAR(yAxisPost, table.axisY.axis, table.axisY.length);
+    set_entity_values(entity, valueSize+table.axisX.size(), valueSize+table.axisX.size()+table.axisY.size(), yAxisPost);
+    TEST_ASSERT_EACH_EQUAL_CHAR(yAxisPost, table.axisY._M_elems, table.axisY.size());
 
     TEST_ASSERT_FALSE(setEntityValue(entity, entity.size+1U, valuePost));
 }
@@ -176,7 +176,7 @@ static void assert_getPageValue(uint8_t page, uint16_t offset)
     if (setPageValue(page, offset, MARKER))
     {
         char szMsg[32];
-        sprintf(szMsg, "Offset %" PRIu16, offset);
+        snprintf(szMsg, _countof(szMsg)-1, "Offset %" PRIu16, offset);
         TEST_ASSERT_EQUAL_MESSAGE(MARKER, getPageValue(page, offset), szMsg);
     }
 }
@@ -236,7 +236,7 @@ static void test_sumEntity_matches_pageSize(void)
     for (uint8_t pageNum=MIN_PAGE_NUM; pageNum<MAX_PAGE_NUM; ++pageNum)
     {
         char szMsg[32];
-        sprintf(szMsg, "Page %" PRIu8, pageNum);
+        snprintf(szMsg, _countof(szMsg)-1, "Page %" PRIu8, pageNum);
         if (pageNum!=8U)
         {
             TEST_ASSERT_EQUAL_MESSAGE(getPageSize(pageNum), sumEntitySizes(pageNum), szMsg);
@@ -248,7 +248,7 @@ static void test_sumEntity_matches_pageSize(void)
 static void print_entity_layout(const page_iterator_t &entity)
 {
     char szMsg[64];
-    sprintf(szMsg, "%" PRIu8 ", %" PRIu8 ", %s, %" PRIu16 ", %" PRIu16, 
+    snprintf(szMsg, _countof(szMsg)-1, "%" PRIu8 ", %" PRIu8 ", %s, %" PRIu16 ", %" PRIu16, 
         entity.location.page, 
         entity.location.index, 
         entity.entity.type==EntityType::Raw ? "Raw" : (entity.entity.type==EntityType::Table ? "Table" : (entity.entity.type==EntityType::NoEntity ? "NoEntity" : "End")),
@@ -282,7 +282,7 @@ static void print_page_layout(void)
     for (uint8_t pageNum=MIN_PAGE_NUM; pageNum<MAX_PAGE_NUM; ++pageNum)
     {
         char szMsg[32];
-        sprintf(szMsg, "%" PRIu8 ", %" PRIu16, pageNum, getPageSize(pageNum));
+        snprintf(szMsg, _countof(szMsg)-1, "%" PRIu8 ", %" PRIu16, pageNum, getPageSize(pageNum));
         UnityPrint(szMsg); UNITY_PRINT_EOL();
     }
 }

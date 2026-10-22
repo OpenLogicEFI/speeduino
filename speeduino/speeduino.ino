@@ -30,18 +30,17 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "corrections.h"
 #include "timers.h"
 #include "decoders.h"
-#include "idle.h"
-#include "auxiliaries.h"
+#include "src/controllers/idle/idle.h"
+#include "src/controllers/vvt/vvtController.h"
 #include "sensors.h"
 #include "storage.h"
 #include "crankMaths.h"
 #include "init.h"
-#include "programmableIOControl.h"
+#include "src/controllers/progammableIO/programmableIOControl.h"
 #include "engineProtection.h"
 #include "secondaryTables.h"
 #include "comms_CAN.h"
 #include "SD_logger.h"
-#include "auxiliaries.h"
 #include "load_source.h"
 #include "board_definition.h"
 #include "unit_testing.h"
@@ -57,6 +56,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "src/controllers/launch/launchController.h"
 #include "src/controllers/fuelPump/fuelPumpController.h"
 #include "scheduler_fuel_controller.h"
+#include "src/controllers/tsCommand/tsCommandController.h"
+#include "src/controllers/fan/fanController.h"
+#include "src/controllers/boost/boostController.h"
+#include "src/controllers/aircon/airconController.h"
+#include "src/controllers/nitrous/nitrousController.h"
+#include "src/controllers/auxChannels/auxChannelController.h"
+#include "src/controllers/ignBypass/ignBypassControl.h"
 
 #define CRANK_RUN_HYSTER    15
 
@@ -64,9 +70,12 @@ constexpr table2D_u8_u8_10 idleTargetTable(&configPage6.iacBins, &configPage6.ia
 
 #ifndef UNIT_TEST // Scope guard for unit testing
 
+static uint16_t mainLoopCount = 0;
+
 void setup(void)
 {
   currentStatus.initialisationComplete = false; //Tracks whether the initialiseAll() function has run completely
+  mainLoopCount = 0;
   initialiseAll();
 }
 
@@ -118,6 +127,24 @@ static void onPowerSourceSwitch(uint8_t originalBatteryVoltage, const statuses &
   }
 }
 
+static void updateTimingTracking(void)
+{
+  if (BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_1HZ)) 
+  { 
+    currentStatus.loopsPerSecond = mainLoopCount;
+    mainLoopCount = 0; 
+  }
+  else if(mainLoopCount < UINT16_MAX) 
+  { 
+    ++mainLoopCount; 
+  }
+  else
+  {
+    // Very fast main loop, at least 65535 loop/sec!
+    // Do nothing.
+  }
+}
+
 /** Speeduino main loop.
  * 
  * Main loop chores (roughly in the order that they are performed):
@@ -129,7 +156,7 @@ static void onPowerSourceSwitch(uint8_t originalBatteryVoltage, const statuses &
  * - Check crank/cam/tooth/timing sync (skip remaining ops if out-of-sync)
  * - execute doCrankSpeedCalcs()
  * 
- * single byte variable @ref currentStatus.LOOP_TIMER plays a big part here as:
+ * single byte variable @ref statuses.LOOP_TIMER plays a big part here as:
  * - it contains expire-bits for interval based frequency driven events (e.g. 15Hz, 4Hz, 1Hz)
  * - Can be tested for certain frequency interval being expired by (eg) BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_15HZ)
  * 
@@ -144,9 +171,9 @@ static void onPowerSourceSwitch(uint8_t originalBatteryVoltage, const statuses &
 BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
 {
   uint8_t originalBatteryVoltage = currentStatus.battery10;
-
-      if(mainLoopCount < UINT16_MAX) { mainLoopCount++; }
+    
       currentStatus.LOOP_TIMER = getAndClearTimerMask();
+      updateTimingTracking();
 
       //SERIAL Comms
       //Initially check that the last serial send values request is not still outstanding
@@ -180,25 +207,14 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
         }   
       #endif
           
-    if(currentLoopTime > micros())
+    if ( currentStatus.decoder.isEngineRunning(micros()) )
     {
-      //Occurs when micros() has overflowed
-      setStorageWriteTimeout(0); //Required to ensure that EEPROM writes are not deferred indefinitely
-    }
-
-    currentLoopTime = micros();
-    if ( currentStatus.decoder.isEngineRunning(currentLoopTime) )
-    {
-      currentStatus.setRpm(currentStatus.decoder.getRPM());
-      if (currentStatus.RPM > 0)
-      {
-        fuelPumpOn();
-      }
+      currentStatus.setRevolutionTime(currentStatus.decoder.getRevolutionTime());
     }
     else
     {
       //We reach here if the time between teeth is too great. This VERY likely means the engine has stopped
-      currentStatus.setRpm(0);
+      currentStatus.setRevolutionTime(0);
       fuelSchedule1.pw = 0;
       currentStatus.VE = 0;
       currentStatus.VE2 = 0;
@@ -209,7 +225,6 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
       currentStatus.rpmDOT = 0;
       initialiseCorrections();
       ignitionCount = 0;
-      stopPumpPriming(currentStatus, configPage2); //Turn off the fuel pump, but only if the priming is complete
       if (configPage6.iacPWMrun == false) { disableIdle(); } //Turn off the idle PWM
       currentStatus.wueIsActive = false; //Same as above except for WUE
       currentStatus.rotationStatus = EngineRotationStatus::Stopped;
@@ -222,16 +237,15 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
       if( (currentStatus.toothLogEnabled == false) && (currentStatus.compositeTriggerUsed == 0) ) { 
         currentStatus.decoder = buildDecoder(configPage4.TrigPattern);
       }
-
-      vvt1Off();
-      vvt2Off();
-      DISABLE_VVT_TIMER();
-      boostDisable();
-      if(configPage4.ignBypassEnabled > 0) { digitalWrite(pinIgnBypass, LOW); } //Reset the ignition bypass ready for next crank attempt
     }
+
+    fuelPumpControl(currentStatus, configPage2);
+
     //***Perform sensor reads***
     //-----------------------------------------------------------------------------------------------------
     readPolledSensors(currentStatus.LOOP_TIMER);
+    boostControl(currentStatus, configPage2, configPage4, configPage6, configPage9, configPage10, configPage15);
+    fanControl(currentStatus, configPage2, configPage6, configPage15);
 
     if(BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_50HZ)) //50 hertz
     {
@@ -241,12 +255,10 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
     }
     if(BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_30HZ)) //30 hertz
     {
-      //Most boost tends to run at about 30Hz, so placing it here ensures a new target time is fetched frequently enough
-      boostControl();
       //VVT may eventually need to be synced with the cam readings (ie run once per cam rev) but for now run at 30Hz
-      vvtControl();
+      vvtControl(currentStatus, configPage4, configPage6, configPage10);
       //Water methanol injection
-      wmiControl();
+      wmiControl(currentStatus, configPage10);
       
       #if defined(NATIVE_CAN_AVAILABLE)
       sendCANBroadcast(30);
@@ -267,10 +279,9 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
       //Check for any outstanding EEPROM writes.
       if( (isEepromWritePending() == true) && (serialStatusFlag == SERIAL_INACTIVE) && storageWriteTimeoutExpired()) { saveAllPages(); } 
     }
+    updateLaunchAndFlatShift(currentStatus, configPage2, configPage6, configPage10, configPage15);
     if (BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_15HZ)) //Every 32 loops
     {
-      checkLaunchAndFlatShift(currentStatus, pinLaunch, configPage2, configPage6, configPage10, configPage15); //Check for launch control and flat shift being active
-
       #if defined(NATIVE_CAN_AVAILABLE)
       sendCANBroadcast(15);
       #endif
@@ -280,10 +291,10 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
     }
     if(BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_10HZ)) //10 hertz
     {
-      checkProgrammableIO(currentStatus, configPage13);
+      programmableIOControl(configPage13);
       
       // Air conditioning control
-      airConControl();
+      airConControl(currentStatus, configPage15);
 
       #if defined(NATIVE_CAN_AVAILABLE)
       sendCANBroadcast(10);
@@ -301,7 +312,7 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
       if( (configPage2.idleAdvEnabled != IDLEADVANCE_MODE_OFF) || (configPage6.iacAlgorithm != IAC_ALGORITHM_NONE) )
       {
         currentStatus.CLIdleTarget = table2D_getValue(&idleTargetTable, temperatureAddOffset(currentStatus.coolant)); //All temps are offset by 40 degrees
-        if(currentStatus.airconTurningOn) { currentStatus.CLIdleTarget += configPage15.airConIdleUpRPMAdder;  } //Adds Idle Up RPM amount if active
+        if(currentStatus.acStatus.turningOn) { currentStatus.CLIdleTarget += configPage15.airConIdleUpRPMAdder;  } //Adds Idle Up RPM amount if active
       }
 
       #ifdef SD_LOGGING
@@ -310,59 +321,7 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
            
       if(BIT_CHECK(statusSensors, BIT_SENSORS_AUX_ENBL))
       {
-        //TODO dazq to clean this right up :)
-        //check through the Aux input channels if enabled for Can or local use
-        for (byte AuxinChan = 0; AuxinChan <16 ; AuxinChan++)
-        {
-          currentStatus.current_caninchannel = AuxinChan;          
-          
-          if (((configPage9.caninput_sel[currentStatus.current_caninchannel]&12) == 4) 
-              && (((configPage9.enable_secondarySerial == 1) && ((configPage9.enable_intcan == 0)&&(configPage9.intcan_available == 1)))
-              || ((configPage9.enable_secondarySerial == 1) && ((configPage9.enable_intcan == 1)&&(configPage9.intcan_available == 1))&& 
-              ((configPage9.caninput_sel[currentStatus.current_caninchannel]&64) == 0))
-              || ((configPage9.enable_secondarySerial == 1) && ((configPage9.enable_intcan == 1)&&(configPage9.intcan_available == 0)))))              
-          { //if current input channel is enabled as external & secondary serial enabled & internal can disabled(but internal can is available)
-            // or current input channel is enabled as external & secondary serial enabled & internal can enabled(and internal can is available)
-            //currentStatus.canin[13] = 11;  Dev test use only!
-            if (configPage9.enable_secondarySerial == 1)  // megas only support can via secondary serial
-            {
-              sendCancommand(2,0,currentStatus.current_caninchannel,0,((configPage9.caninput_source_can_address[currentStatus.current_caninchannel]&2047)+0x100));
-              //send an R command for data from caninput_source_address[currentStatus.current_caninchannel] from secondarySerial
-            }
-          }  
-          else if (((configPage9.caninput_sel[currentStatus.current_caninchannel]&12) == 4) 
-              && (((configPage9.enable_secondarySerial == 1) && ((configPage9.enable_intcan == 1)&&(configPage9.intcan_available == 1))&& 
-              ((configPage9.caninput_sel[currentStatus.current_caninchannel]&64) == 64))
-              || ((configPage9.enable_secondarySerial == 0) && ((configPage9.enable_intcan == 1)&&(configPage9.intcan_available == 1))&& 
-              ((configPage9.caninput_sel[currentStatus.current_caninchannel]&128) == 128))))                             
-          { //if current input channel is enabled as external for canbus & secondary serial enabled & internal can enabled(and internal can is available)
-            // or current input channel is enabled as external for canbus & secondary serial disabled & internal can enabled(and internal can is available)
-            //currentStatus.canin[13] = 12;  Dev test use only!  
-          #if defined(CORE_STM32) || defined(CORE_TEENSY)
-           if (configPage9.enable_intcan == 1) //  if internal can is enabled 
-           {
-              sendCancommand(3,configPage9.speeduino_tsCanId,currentStatus.current_caninchannel,0,((configPage9.caninput_source_can_address[currentStatus.current_caninchannel]&2047)+0x100));  
-              //send an R command for data from caninput_source_address[currentStatus.current_caninchannel] from internal canbus
-           }
-          #endif
-          }   
-          else if ((((configPage9.enable_secondarySerial == 1) || ((configPage9.enable_intcan == 1) && (configPage9.intcan_available == 1))) && (configPage9.caninput_sel[currentStatus.current_caninchannel]&12) == 8)
-                  || (((configPage9.enable_secondarySerial == 0) && ( (configPage9.enable_intcan == 1) && (configPage9.intcan_available == 0) )) && (configPage9.caninput_sel[currentStatus.current_caninchannel]&3) == 2)  
-                  || (((configPage9.enable_secondarySerial == 0) && (configPage9.enable_intcan == 0)) && ((configPage9.caninput_sel[currentStatus.current_caninchannel]&3) == 2)))  
-          { //if current input channel is enabled as analog local pin
-            //read analog channel specified
-            //currentStatus.canin[13] = (configPage9.Auxinpina[currentStatus.current_caninchannel]&63);  Dev test use only!127
-            currentStatus.canin[currentStatus.current_caninchannel] = readAuxanalog(pinTranslateAnalog(configPage9.Auxinpina[currentStatus.current_caninchannel]&63));
-          }
-          else if ((((configPage9.enable_secondarySerial == 1) || ((configPage9.enable_intcan == 1) && (configPage9.intcan_available == 1))) && (configPage9.caninput_sel[currentStatus.current_caninchannel]&12) == 12)
-                  || (((configPage9.enable_secondarySerial == 0) && ( (configPage9.enable_intcan == 1) && (configPage9.intcan_available == 0) )) && (configPage9.caninput_sel[currentStatus.current_caninchannel]&3) == 3)
-                  || (((configPage9.enable_secondarySerial == 0) && (configPage9.enable_intcan == 0)) && ((configPage9.caninput_sel[currentStatus.current_caninchannel]&3) == 3)))
-          { //if current input channel is enabled as digital local pin
-            //read digital channel specified
-            //currentStatus.canin[14] = ((configPage9.Auxinpinb[currentStatus.current_caninchannel]&63)+1);  Dev test use only!127+1
-            currentStatus.canin[currentStatus.current_caninchannel] = readAuxdigital((configPage9.Auxinpinb[currentStatus.current_caninchannel]&63)+1);
-          } //Channel type
-        } //For loop going through each channel
+        auxChannelControl(currentStatus, configPage9);
       } //aux channels are enabled
     } //4Hz timer
     if (BIT_CHECK(currentStatus.LOOP_TIMER, BIT_TIMER_1HZ)) //Once per second)
@@ -375,11 +334,11 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
         if (currentStatus.wmiTankEmpty)
         {
           // flash with 1sec interval
-          digitalWrite(pinWMIIndicator, !digitalRead(pinWMIIndicator));
+          digitalWrite(pinNumbers.pinWMIIndicator, !digitalRead(pinNumbers.pinWMIIndicator));
         }
         else
         {
-          digitalWrite(pinWMIIndicator, configPage10.wmiIndicatorPolarity ? HIGH : LOW);
+          digitalWrite(pinNumbers.pinWMIIndicator, configPage10.wmiIndicatorPolarity ? HIGH : LOW);
         } 
       }
 
@@ -392,7 +351,6 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
           if(syncSDLog()) { msSinceLastSDSync = 0; } //Run SD sync and reset  
         }
       #endif
-
     } //1Hz timer
 
     // Run idlecontrol every loop for stepper idle...
@@ -420,14 +378,7 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
         //Check whether running or cranking
         if(currentStatus.RPM > currentStatus.crankRPM) //Crank RPM in the config is stored as a x10. currentStatus.crankRPM is set in timers.ino and represents the true value
         {
-          bool crankToRun = currentStatus.rotationStatus==EngineRotationStatus::Cranking;
           currentStatus.rotationStatus = EngineRotationStatus::Running;
-
-         //Only need to do anything if we're transitioning from cranking to running
-          if( crankToRun )
-          {
-            if(configPage4.ignBypassEnabled > 0) { digitalWrite(pinIgnBypass, HIGH); }
-          }
         }
         else
         {  
@@ -436,13 +387,9 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
             //Sets the engine cranking bit, clears the engine running bit
             currentStatus.rotationStatus = EngineRotationStatus::Cranking;
             currentStatus.runSecs = 0; //We're cranking (hopefully), so reset the engine run time to prompt ASE.
-            if(configPage4.ignBypassEnabled > 0) { digitalWrite(pinIgnBypass, LOW); }
-
-            //Check whether the user has selected to disable to the fan during cranking
-            if(configPage2.fanWhenCranking == 0) { fanOff(); }
           }
         }
-
+      ignBypassControl(currentStatus);
       currentStatus.engineProtect = checkEngineProtection(currentStatus, configPage4, configPage6, configPage9, configPage10);
       //END SETTING ENGINE STATUSES
       //-----------------------------------------------------------------------------------------------------
@@ -461,7 +408,7 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
                                     currentStatus);
       currentStatus.stagingActive = pulse_widths.secondary!=0U;
 
-      applyPwToInjectorChannels(pulse_widths, configPage2, configPage4, configPage6, currentStatus);
+      applyPwToInjectorChannels(pulse_widths, configPage2, configPage4, configPage6, configPage10, currentStatus);
       
       //***********************************************************************************************
       //| BEGIN IGNITION CALCULATIONS
@@ -470,30 +417,13 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
       currentStatus.dwell = correctionsDwell(computeDwell(currentStatus, configPage2, configPage4, dwellTable));
 
       // Convert the dwell time to dwell angle based on the current engine speed
-      calculateIgnitionAngles(configPage2, configPage4, currentStatus);
+      calculateIgnitionAngles(configPage2, configPage4, configPage13, currentStatus);
 
       //***********************************************************************************************
       //| BEGIN FUEL SCHEDULES
       //Finally calculate the time (uS) until we reach the firing angles and set the schedules
       //We only need to set the schedule if we're BEFORE the open angle
       //This may potentially be called a number of times as we get closer and closer to the opening time
-
-      // if(Serial && false)
-      // {
-      //   if(ignitionSchedule1.chargeAngle > crankAngle)
-      //   {
-      //     noInterrupts();
-      //     Serial.print("Time2LastTooth:"); Serial.println(micros()-toothLastToothTime);
-      //     Serial.print("elapsedTime:"); Serial.println(elapsedTime);
-      //     Serial.print("CurAngle:"); Serial.println(crankAngle);
-      //     Serial.print("RPM:"); Serial.println(currentStatus.RPM);
-      //     Serial.print("Tooth:"); Serial.println(toothCurrentCount);
-      //     Serial.print("timePerDegree:"); Serial.println(timePerDegree);
-      //     Serial.print("IGN1Angle:"); Serial.println(ignitionSchedule1.chargeAngle);
-      //     Serial.print("TimeToIGN1:"); Serial.println(angleToTime((ignitionSchedule1.chargeAngle - crankAngle), CRANKMATH_METHOD_INTERVAL_REV));
-      //     interrupts();
-      //   }
-      // }
       
       currentStatus.schedulerCutState = calculateFuelIgnitionChannelCut(currentStatus, configPage2, configPage4, configPage6, configPage9);
       if (currentStatus.schedulerCutState.status==SchedulerCutStatus::None)
@@ -503,41 +433,11 @@ BEGIN_LTO_ALWAYS_INLINE(void) loop(void)
       
       currentStatus.injAngle = setFuelChannelSchedules(currentStatus);
     
-      //***********************************************************************************************
-      //| BEGIN IGNITION SCHEDULES
-      //Same as above, except for ignition
-
-      //fixedCrankingOverride is used to extend the dwell during cranking so that the decoder can trigger the spark upon seeing a certain tooth. Currently only available on the basic distributor and 4g63 decoders.
-      if ( configPage4.ignCranklock && (currentStatus.rotationStatus==EngineRotationStatus::Cranking) && (currentStatus.decoder.getFeatures().hasFixedCrankingTiming) )
-      {
-        fixedCrankingOverride = currentStatus.dwell * 3;
-        //This is a safety step to prevent the ignition start time occurring AFTER the target tooth pulse has already occurred. It simply moves the start time forward a little, which is compensated for by the increase in the dwell time
-        if(currentStatus.RPM < 250)
-        {
-          ignitionSchedule1.chargeAngle -= 5;
-          ignitionSchedule2.chargeAngle -= 5;
-          ignitionSchedule3.chargeAngle -= 5;
-          ignitionSchedule4.chargeAngle -= 5;
-#if IGN_CHANNELS >= 5
-          ignitionSchedule5.chargeAngle -= 5;
-#endif
-#if IGN_CHANNELS >= 6          
-          ignitionSchedule6.chargeAngle -= 5;
-#endif
-#if IGN_CHANNELS >= 7
-          ignitionSchedule7.chargeAngle -= 5;
-#endif
-#if IGN_CHANNELS >= 8
-          ignitionSchedule8.chargeAngle -= 5;
-#endif
-        }
-      }
-      else { fixedCrankingOverride = 0; }
-
-      setIgnitionChannels(currentStatus, currentStatus.decoder.getCrankAngle(), currentStatus.dwell + fixedCrankingOverride);
+      setIgnitionChannels(currentStatus, configPage4, currentStatus.decoder.getCrankAngle());
 
     } //Has sync and RPM
     matchResetControlToEngineState(currentStatus);
+    pulsedCommandController(currentStatus, configPage13);
     onPowerSourceSwitch(originalBatteryVoltage, currentStatus, configPage2, configPage6);
 } //loop()
 END_LTO_INLINE()

@@ -1,16 +1,10 @@
 #pragma once
 
 #include <stdint.h>
-#include <Arduino.h>
+#include "src/pins/boardInputPin.h"
 
 /** @brief This constant represents no trigger edge */
 static constexpr uint8_t TRIGGER_EDGE_NONE = 99;
-// Just in case
-static_assert(TRIGGER_EDGE_NONE != LOW, "LOW edge value conflict");
-static_assert(TRIGGER_EDGE_NONE != HIGH, "HIGH edge value conflict");
-static_assert(TRIGGER_EDGE_NONE != RISING, "RISING edge value conflict");
-static_assert(TRIGGER_EDGE_NONE != FALLING, "FALLING edge value conflict");
-static_assert(TRIGGER_EDGE_NONE != CHANGE, "CHANGE edge value conflict");
 
 /** @brief This structure represents a trigger interrupt */
 struct interrupt_t
@@ -22,28 +16,40 @@ struct interrupt_t
   /** @brief The edge type for the interrupt. E.g. RISING, FALLING, CHANGE */
   uint8_t edge = TRIGGER_EDGE_NONE;
 
-  /** @brief Attach the interrupt to a pin */
-  void attach(uint8_t pin) const
+  interrupt_t() = default;
+  interrupt_t(callback_t _callback, uint8_t _edge)
+  : callback(_callback)
+  , edge(_edge)
   {
-    detach(pin);
-    if (isValid())
-    {
-      attachInterrupt(digitalPinToInterrupt(pin), callback, edge);
-    }
-  }  
+  }
+
+  /** @brief Attach the interrupt to a pin */
+  uint8_t attach(uint8_t pin);
 
   /** @brief Detach the interrupt from a pin */
-  void detach(uint8_t pin) const
-  {
-    detachInterrupt( digitalPinToInterrupt(pin) );
-  }  
+  void detach(uint8_t pin);
 
+  /**
+   * @brief Does the pin state match the edge setting? 
+   * 
+   * @note Will always return true for the `CHANGE` trigger edge
+  */
+  bool isTriggered(void) const;
+
+  /** @brief Is the interrupt configured correctly? */
   bool isValid(void) const
   {
-    return edge!=TRIGGER_EDGE_NONE && callback!=nullptr;
+    return edge!=TRIGGER_EDGE_NONE 
+        && callback!=nullptr
+        && _pin.isValid();
   }
-};
 
+  bool isPinHigh(void) const {
+    return _pin.isPinHigh();
+  }
+
+  boardInputPin_t _pin;
+};
 
 /** \enum SyncStatus
  * @brief The decoder trigger status
@@ -95,15 +101,31 @@ struct decoder_t
   interrupt_t tertiary;
 
   /// @{
-  /** @brief The function to get the RPM */
-  using getRPM_t = uint16_t(*)(void);
-  getRPM_t getRPM;
+  /**
+   * @brief The function to get the current crank revolution time
+   * 
+   * This is the time in µS that one crank revolution would take at the current speed,
+   * as measured by the decoder. RPM is derived from this (see statuses::setRevolutionTime()).
+   * 
+   * @return The revolution time in µS, or 0 if the engine speed is unknown (E.g. no sync). If the decoder
+   * can't take a new measurement (E.g. no tooth history yet), it can return the current
+   * statuses::revolutionTime to keep the last known speed.
+   */
+  using getRevolutionTime_t = uint32_t(*)(void);
+  getRevolutionTime_t getRevolutionTime;
   /// @}
 
   /// @{
   /** @brief The function to get the crank angle */
-  using getCrankAngle_t = int16_t(*)(void);
-  getCrankAngle_t getCrankAngle;
+  using getCrankAngle_t = int16_t(*)(uint32_t);
+  getCrankAngle_t pGetCrankAngle;
+  /// @}
+
+  /// @{
+  /** @brief The function to get the crank angle */
+  int16_t getCrankAngle(void) const {
+    return pGetCrankAngle(micros());
+  };
   /// @}
 
   /// @{
@@ -137,7 +159,7 @@ struct decoder_t
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wnoexcept-type"  
   using status_fun_t = decoder_status_t(*)(void)noexcept;
-#pragma GCC diagnostic push
+#pragma GCC diagnostic pop
   status_fun_t getStatus;
   /// @}  
 

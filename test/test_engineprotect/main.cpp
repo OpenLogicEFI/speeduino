@@ -10,6 +10,8 @@
 extern bool checkOilPressureLimit(const statuses &current, const config6 &page6, const config10 &page10, uint32_t currMillis);
 extern table2D_u8_u8_4 oilPressureProtectTable;
 extern uint32_t oilProtEndTime;
+extern bool oilProtTimerStarted;
+extern bool afrProtTimerStarted;
 
 extern bool checkBoostLimit(const statuses &current, const config6 &page6);
 extern bool checkRpmLimit(const statuses &current, const config4 &page4, const config6 &page6, const config9 &page9);
@@ -68,6 +70,8 @@ extern uint16_t applyFlatShiftRevLimit(uint16_t curLimit, const statuses &curren
 static void resetInternalState(void)
 {
     oilProtEndTime = 0;
+    oilProtTimerStarted = false;
+    afrProtTimerStarted = false;
     checkAFRLimitActive = false;
     afrProtectedActivateTime = 0;
     softLimitTime = 0;
@@ -108,8 +112,8 @@ struct engineProtection_test_context_t
     engineProtection_test_context_t(void)
     {
         current.decoder = decoder_builder_t().setGetStatus(getFakeDecoderStatus).build();
-        current.numPrimaryInjOutputs = 4;
-        current.numSecondaryInjOutputs = 4;
+        current.injOutputs.primary = 4;
+        current.injOutputs.secondary = 4;
         current.maxIgnOutputs = 8;
     }
 
@@ -206,6 +210,34 @@ struct engineProtection_test_context_t
     }
 };
 
+static void test_protection_deadlines_wrap(void)
+{
+    const uint32_t starts[] = {UINT32_MAX - 49U, UINT32_MAX - 99U, 0U};
+    for (uint32_t start : starts)
+    {
+        engineProtection_test_context_t context;
+        context.setOilPressureActive();
+        context.page10.oilPressureProtTime = 1; // 100ms
+        TEST_ASSERT_FALSE(checkOilPressureLimit(context.current, context.page6, context.page10, start));
+        TEST_ASSERT_FALSE(checkOilPressureLimit(context.current, context.page6, context.page10, start + 99U));
+        TEST_ASSERT_TRUE(checkOilPressureLimit(context.current, context.page6, context.page10, start + 100U));
+        context.current.oilPressure = 255;
+        TEST_ASSERT_FALSE(checkOilPressureLimit(context.current, context.page6, context.page10, start + 101U));
+        TEST_ASSERT_FALSE(oilProtTimerStarted);
+
+        context.setAfrActive();
+        afrProtectedActivateTime = 0;
+        context.page9.afrProtectCutTime = 1;
+        TEST_ASSERT_FALSE(checkAFRLimit(context.current, context.page6, context.page9, start));
+        TEST_ASSERT_FALSE(checkAFRLimit(context.current, context.page6, context.page9, start + 99U));
+        TEST_ASSERT_TRUE(checkAFRLimit(context.current, context.page6, context.page9, start + 100U));
+        TEST_ASSERT_TRUE(checkAFRLimit(context.current, context.page6, context.page9, start + 101U));
+        context.current.TPS = 0;
+        TEST_ASSERT_FALSE(checkAFRLimit(context.current, context.page6, context.page9, start + 102U));
+        TEST_ASSERT_FALSE(afrProtTimerStarted);
+    }
+}
+
 static void test_checkOilPressureLimit_basic(void) {
     engineProtection_test_context_t context;
     
@@ -259,6 +291,8 @@ static void test_checkOilPressureLimit_activate_when_time_expires(void) {
     context.setOilPressureActive(); 
 
     oilProtEndTime = 0;
+    oilProtTimerStarted = false;
+    afrProtTimerStarted = false;
     TEST_ASSERT_TRUE(checkOilPressureLimit(context.current, context.page6, context.page10, millis()));
 
     oilProtEndTime = 10000;
@@ -275,6 +309,8 @@ static void test_checkOilPressureLimit_timer_and_activation(void)
     // Set a non-zero delay (2 -> 200ms)
     context.page10.oilPressureProtTime = 2;
     oilProtEndTime = 0;
+    oilProtTimerStarted = false;
+    afrProtTimerStarted = false;
 
     unsigned long now = 12345UL;
     // First call should arm the timer but not yet activate
@@ -309,6 +345,8 @@ static void test_checkOilPressureLimit_timer_resets_when_pressure_recovers(void)
     context.page10.oilPressureProtTime = 5;
     unsigned long now = 30000UL;
     oilProtEndTime = 0;
+    oilProtTimerStarted = false;
+    afrProtTimerStarted = false;
 
     // Arm the timer
     TEST_ASSERT_FALSE(checkOilPressureLimit(context.current, context.page6, context.page10, now));
@@ -565,14 +603,14 @@ static void test_applyHardLaunchRevLimit(void)
     uint8_t curLimit = 80;
 
     engineProtection_test_context_t context;
-    context.current.launchingHard = false;
+    context.current.launchStatus.launchingHard = false;
     context.page6.lnchHardLim = curLimit-10;
     TEST_ASSERT_EQUAL_UINT8(curLimit, applyHardLaunchRevLimit(curLimit, context.current, context.page6)); // no change
 
-    context.current.launchingHard = true;
+    context.current.launchStatus.launchingHard = true;
     TEST_ASSERT_EQUAL_UINT8(context.page6.lnchHardLim, applyHardLaunchRevLimit(curLimit, context.current, context.page6)); // no change
 
-    context.current.launchingHard = true;
+    context.current.launchStatus.launchingHard = true;
     context.page6.lnchHardLim = curLimit+10;
     TEST_ASSERT_EQUAL_UINT8(curLimit, applyHardLaunchRevLimit(curLimit, context.current, context.page6)); // no change
 }
@@ -582,14 +620,14 @@ static void test_applyFlatShiftRevLimit(void)
     uint16_t curLimit = 8000;
     engineProtection_test_context_t context;
 
-    context.current.flatShiftingHard = false;
-    context.current.clutchEngagedRPM = curLimit-100;
+    context.current.launchStatus.flatShiftingHard = false;
+    context.current.launchStatus.clutchEngagedRPM = curLimit-100;
     TEST_ASSERT_EQUAL_UINT16(curLimit, applyFlatShiftRevLimit(curLimit, context.current)); // no change
    
-    context.current.flatShiftingHard = true;
-    TEST_ASSERT_EQUAL_UINT16(context.current.clutchEngagedRPM, applyFlatShiftRevLimit(curLimit, context.current)); // no change
+    context.current.launchStatus.flatShiftingHard = true;
+    TEST_ASSERT_EQUAL_UINT16(context.current.launchStatus.clutchEngagedRPM, applyFlatShiftRevLimit(curLimit, context.current)); // no change
 
-    context.current.clutchEngagedRPM = curLimit+100;
+    context.current.launchStatus.clutchEngagedRPM = curLimit+100;
     TEST_ASSERT_EQUAL_UINT16(curLimit, applyFlatShiftRevLimit(curLimit, context.current)); // no change
 }
 
@@ -636,16 +674,16 @@ static void test_getMaxRpm_launch_and_flatshift_priority(void)
     // Part A: launchingHard should apply lnchHardLim
     context.page9.hardRevMode = HARD_REV_FIXED;
     context.page4.HardRevLim = 80; // 8000
-    context.current.launchingHard = true;
+    context.current.launchStatus.launchingHard = true;
     context.page6.lnchHardLim = 30; // div100 -> 3000
 
     uint16_t resultA = getMaxRpm(context.current, context.page4, context.page6, context.page9);
     TEST_ASSERT_EQUAL_UINT16(3000, resultA);
 
     // Part B: flat shift clamps to absolute clutchEngagedRPM
-    context.current.launchingHard = false;
-    context.current.flatShiftingHard = true;
-    context.current.clutchEngagedRPM = 2500; // absolute RPM clamp
+    context.current.launchStatus.launchingHard = false;
+    context.current.launchStatus.flatShiftingHard = true;
+    context.current.launchStatus.clutchEngagedRPM = 2500; // absolute RPM clamp
     // Ensure other limits would be higher (force engine protect active to produce > 2500)
     context.current.engineProtect.boostCut = true;
     context.page4.engineProtectMaxRPM = 40; // 4000
@@ -859,8 +897,8 @@ static void test_calculateFuelIgnitionChannelCut_rolling_cut_ignition_only(void)
     context.setHardCutRolling();
 
     context.current.maxIgnOutputs = 1;
-    context.current.numPrimaryInjOutputs = 1;
-    context.current.numSecondaryInjOutputs = 0;
+    context.current.injOutputs.primary = 1;
+    context.current.injOutputs.secondary = 0;
 
     context.current.engineProtect = checkEngineProtection(context.current, context.page4, context.page6, context.page9, context.page10);
     auto onOff = calculateFuelIgnitionChannelCut(context.current, context.page2, context.page4, context.page6, context.page9);
@@ -876,8 +914,8 @@ static void test_calculateFuelIgnitionChannelCut_rolling_cut_both(void)
     context.setHardCutRolling();
 
     context.current.maxIgnOutputs = 1;
-    context.current.numPrimaryInjOutputs = 1;
-    context.current.numSecondaryInjOutputs = 0;
+    context.current.injOutputs.primary = 1;
+    context.current.injOutputs.secondary = 0;
     context.page6.engineProtectType = PROTECT_CUT_BOTH;
 
     context.current.engineProtect = checkEngineProtection(context.current, context.page4, context.page6, context.page9, context.page10);
@@ -895,8 +933,8 @@ static void test_calculateFuelIgnitionChannelCut_rolling_cut_multi_channel_fullc
 
     context.current.setRpm( context.current.RPM * 2U); // ensure rpmDelta >= 0 for full cut
     context.current.maxIgnOutputs = 4;
-    context.current.numPrimaryInjOutputs = 2;
-    context.current.numSecondaryInjOutputs = 2;
+    context.current.injOutputs.primary = 2;
+    context.current.injOutputs.secondary = 2;
     context.page6.engineProtectType = PROTECT_CUT_BOTH;
 
     context.current.engineProtect = checkEngineProtection(context.current, context.page4, context.page6, context.page9, context.page10);
@@ -930,8 +968,8 @@ static void test_calculateFuelIgnitionChannelCut_pending_ignition_clears_determi
     context.page2.strokes = FOUR_STROKE;
     context.current.setRpm( RPM_COARSE.toUser(context.page4.HardRevLim-1U)); // between (maxAllowed + axis[0]*10) and maxAllowed
     context.current.maxIgnOutputs = 2;
-    context.current.numPrimaryInjOutputs = 1;
-    context.current.numSecondaryInjOutputs = 1;
+    context.current.injOutputs.primary = 1;
+    context.current.injOutputs.secondary = 1;
     context.page6.engineProtectType = PROTECT_CUT_BOTH;
 
     // Prepare a schedulerCutState where ignition channels are pending
@@ -1283,8 +1321,8 @@ static void test_applyRollingCut_no_revolutions_elapsed(void)
     resetInternalState();
     rollingCutLastRev = 100U;
     context.current.maxIgnOutputs = 8;
-    context.current.numPrimaryInjOutputs = 8;
-    context.current.numSecondaryInjOutputs = 0;
+    context.current.injOutputs.primary = 8;
+    context.current.injOutputs.secondary = 0;
     context.current.startRevolutions = 100U;
     context.current.schedulerCutState.fuelChannels = 0xAA;
     context.current.schedulerCutState.ignitionChannels = 0x55;
@@ -1349,7 +1387,7 @@ static void test_applyRollingCut_revolutions_elapsed_forced_no_cuts(void)
     auto result = applyRollingCut(context.current, context.page2, context.page4, context.page6, maxAllowedRPM);
 
     // All channels should be turned on (masked to configured counts)
-    TEST_ASSERT_EQUAL_HEX8((1U << getTotalInjChannelCount(context.current)) - 1U, result.fuelChannels);
+    TEST_ASSERT_EQUAL_HEX8((1U << context.current.injOutputs.getTotalInjectors()) - 1U, result.fuelChannels);
     TEST_ASSERT_EQUAL_HEX8((1U << context.current.maxIgnOutputs) - 1U, result.ignitionChannels);
     TEST_ASSERT_EQUAL(SchedulerCutStatus::Rolling, result.status);
     TEST_ASSERT_EQUAL_UINT32(context.current.startRevolutions, rollingCutLastRev);
@@ -1364,8 +1402,8 @@ static void test_calculateFuelIgnitionChannelCut_rolling_cut_forced_all_channels
 
     context.current.setRpm( context.current.RPM * 2U); // ensure full-cut condition if rpmDelta >= 0
     context.current.maxIgnOutputs = 4;
-    context.current.numPrimaryInjOutputs = 2;
-    context.current.numSecondaryInjOutputs = 2;
+    context.current.injOutputs.primary = 2;
+    context.current.injOutputs.secondary = 2;
     context.page6.engineProtectType = PROTECT_CUT_BOTH;
 
     // Inject deterministic RNG that always triggers cuts
@@ -1404,13 +1442,13 @@ static void test_getMaxRpm_launch_and_flatshift_both_active(void)
     engineProtection_test_context_t context;
     context.page9.hardRevMode = HARD_REV_FIXED;
     context.page4.HardRevLim = RPM_COARSE.toRaw(8000);
-    context.current.launchingHard = true;
+    context.current.launchStatus.launchingHard = true;
     context.page6.lnchHardLim = RPM_COARSE.toRaw(5000U);
-    context.current.flatShiftingHard = true;
-    context.current.clutchEngagedRPM = 3000; // Even lower
+    context.current.launchStatus.flatShiftingHard = true;
+    context.current.launchStatus.clutchEngagedRPM = 3000; // Even lower
 
     // Flat shift should win (lowest limit)
-    TEST_ASSERT_EQUAL_UINT16(context.current.clutchEngagedRPM, getMaxRpm(context.current, context.page4, context.page6, context.page9));
+    TEST_ASSERT_EQUAL_UINT16(context.current.launchStatus.clutchEngagedRPM, getMaxRpm(context.current, context.page4, context.page6, context.page9));
 }
 
 // Test staging boundary at StgCycles
@@ -1499,8 +1537,8 @@ static void test_FullCut_masks_unused(void)
     TEST_ASSERT_EQUAL(SchedulerCutStatus::Full, onOff.status);
 
     context.page6.engineProtectType = PROTECT_CUT_IGN;
-    context.current.numPrimaryInjOutputs = 5;
-    context.current.numSecondaryInjOutputs = 0;
+    context.current.injOutputs.primary = 5;
+    context.current.injOutputs.secondary = 0;
     context.current.maxIgnOutputs = 3;
     onOff = calculateFuelIgnitionChannelCut(context.current, context.page2, context.page4, context.page6, context.page9);
     TEST_ASSERT_EQUAL_HEX8(0x1F, onOff.fuelChannels);
@@ -1508,8 +1546,8 @@ static void test_FullCut_masks_unused(void)
     TEST_ASSERT_EQUAL(SchedulerCutStatus::Full, onOff.status);
 
     context.page6.engineProtectType = PROTECT_CUT_FUEL;
-    context.current.numPrimaryInjOutputs = 5;
-    context.current.numSecondaryInjOutputs = 3;
+    context.current.injOutputs.primary = 5;
+    context.current.injOutputs.secondary = 3;
     context.current.maxIgnOutputs = 8;
     onOff = calculateFuelIgnitionChannelCut(context.current, context.page2, context.page4, context.page6, context.page9);
     TEST_ASSERT_EQUAL_HEX8(0x00, onOff.fuelChannels);
@@ -1517,8 +1555,8 @@ static void test_FullCut_masks_unused(void)
     TEST_ASSERT_EQUAL(SchedulerCutStatus::Full, onOff.status);
 
     context.page6.engineProtectType = PROTECT_CUT_FUEL;
-    context.current.numPrimaryInjOutputs = 5;
-    context.current.numSecondaryInjOutputs = 0;
+    context.current.injOutputs.primary = 5;
+    context.current.injOutputs.secondary = 0;
     context.current.maxIgnOutputs = 3;
     onOff = calculateFuelIgnitionChannelCut(context.current, context.page2, context.page4, context.page6, context.page9);
     TEST_ASSERT_EQUAL_HEX8(0x00, onOff.fuelChannels);
@@ -1534,16 +1572,16 @@ static void test_NoCut_masks_unused(void)
 
     context.current.engineProtect = checkEngineProtection(context.current, context.page4, context.page6, context.page9, context.page10);
     
-    context.current.numPrimaryInjOutputs = 4;
-    context.current.numSecondaryInjOutputs = 4;
+    context.current.injOutputs.primary = 4;
+    context.current.injOutputs.secondary = 4;
     context.current.maxIgnOutputs = 8;
     auto onOff = calculateFuelIgnitionChannelCut(context.current, context.page2, context.page4, context.page6, context.page9);
     TEST_ASSERT_EQUAL_HEX8(0xFF, onOff.fuelChannels);
     TEST_ASSERT_EQUAL_HEX8(0xFF, onOff.ignitionChannels);
     TEST_ASSERT_EQUAL(SchedulerCutStatus::None, onOff.status);
 
-    context.current.numPrimaryInjOutputs = 4;
-    context.current.numSecondaryInjOutputs = 1;
+    context.current.injOutputs.primary = 4;
+    context.current.injOutputs.secondary = 1;
     context.current.maxIgnOutputs = 3;
     onOff = calculateFuelIgnitionChannelCut(context.current, context.page2, context.page4, context.page6, context.page9);
     TEST_ASSERT_EQUAL_HEX8(0x1F, onOff.fuelChannels);
@@ -1571,8 +1609,8 @@ static void test_RollingCut_masks_unused(void)
 
     // Ensure rollingCutLastRev is 5 revolutions earlier so rolling cut is applied
     rollingCutLastRev = context.current.startRevolutions - 5;
-    context.current.numPrimaryInjOutputs = 5;
-    context.current.numSecondaryInjOutputs = 0;
+    context.current.injOutputs.primary = 5;
+    context.current.injOutputs.secondary = 0;
     context.current.maxIgnOutputs = 3;
     cut = calculateFuelIgnitionChannelCut(context.current, context.page2, context.page4, context.page6, context.page9);
     TEST_ASSERT_EQUAL_HEX8(0b00001010, cut.fuelChannels);
@@ -1585,6 +1623,7 @@ static void test_RollingCut_masks_unused(void)
     SET_UNITY_FILENAME() {
 
     RUN_TEST_P(test_checkOilPressureLimit_basic);
+    RUN_TEST_P(test_protection_deadlines_wrap);
     RUN_TEST_P(test_checkOilPressureLimit_activate_when_time_expires);
     RUN_TEST_P(test_checkOilPressureLimit_timer_and_activation)
     RUN_TEST_P(test_checkOilPressureLimit_existing_engineProtect_forces_cut);

@@ -8,10 +8,13 @@
 */
 
 #include <stdint.h>
+#include <type_traits>
+#include <limits>
 #include <Arduino.h>
-#include "src/stdlib/type_traits.h"
-#include "src/stdlib/limits.h"
 #include "storage_api.h"
+
+// Forward declarations
+struct pinNumbers_t;
 
 /**
  * @brief Initialise the board, including USB comms
@@ -27,7 +30,7 @@ void initBoard(uint32_t baudRate);
  * 
  * This is called *after* the pins are assigned and therefore after initBoard()
  */
-void boardInitPins(uint8_t boardID);
+void boardInitPins(uint8_t boardID, pinNumbers_t &pins);
 
 /** @brief Calculate free RAM for display in TunerStudio */
 uint16_t freeRam(void);
@@ -43,6 +46,9 @@ uint8_t getSystemTemp(void);
 
 /** @brief Get the storage API for the board */
 storage_api_t getBoardStorageApi(void);
+
+/** @brief Get the PWM timer resolution in uS */
+uint8_t getPwmTimerResolution(void);
 
 ///@cond 
 // Shared building blocks for the board headers
@@ -80,7 +86,7 @@ void boardInitRTC(void);
 #define SET_COMPARE(compare, value) (compare) = (COMPARE_TYPE)(value)
 
 /** @brief The longest period of time (in uS) that the timer can permit */
-constexpr uint32_t MAX_TIMER_PERIOD = ticksToMicros((numeric_limits<COMPARE_TYPE>::max)());
+constexpr uint32_t MAX_TIMER_PERIOD = ticksToMicros((std::numeric_limits<COMPARE_TYPE>::max)());
 
 #if !defined(NOT_A_PIN)
 constexpr uint8_t NOT_A_PIN = UINT8_MAX; // Note that zero is a valid pin number, so we can't use that to indicate an unused pin

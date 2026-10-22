@@ -13,7 +13,7 @@ This is for handling the data broadcasted to various CAN dashes and instrument c
 #include "comms_CAN.h"
 #include "maths.h"
 #include "units.h"
-#include "programmableIOControl.h"
+#include "src/controllers/progammableIO/programmableIOControl.h"
 #include "scheduler_fuel_controller.h"
 
 CAN_message_t inMsg;
@@ -305,8 +305,12 @@ void DashMessage(uint16_t DashMessageID)
 
     case CAN_HALTECH_DATA3:
       temp_Advance = currentStatus.advance * 10U; //Note: Signed value
-      //Convert PW into duty cycle
-      temp_DutyCycle = (fuelSchedule1.pw * 100UL * currentStatus.nSquirts) / currentStatus.revolutionTime; 
+      //Convert PW into duty cycle. The revolution time is zero until the engine speed has been measured, so report 0% duty cycle until then
+      temp_DutyCycle = 0U;
+      if (currentStatus.revolutionTime != 0U)
+      {
+        temp_DutyCycle = (fuelSchedule1.pw * 100UL * currentStatus.nSquirts) / currentStatus.revolutionTime;
+      }
       if (configPage2.strokes == FOUR_STROKE) { temp_DutyCycle = temp_DutyCycle / 2U; }
 
       outMsg.len = 8;
@@ -324,12 +328,18 @@ void DashMessage(uint16_t DashMessageID)
       outMsg.len = 8;
       outMsg.buf[0] = highByte(fuelSchedule1.pw);
       outMsg.buf[1] = lowByte(fuelSchedule1.pw);
+#if (INJ_CHANNELS >= 2)
       outMsg.buf[2] = highByte(fuelSchedule2.pw);
       outMsg.buf[3] = lowByte(fuelSchedule2.pw);
+#endif
+#if (INJ_CHANNELS >= 3)
       outMsg.buf[4] = highByte(fuelSchedule3.pw);
       outMsg.buf[5] = lowByte(fuelSchedule3.pw);
+#endif
+#if (INJ_CHANNELS >= 4)
       outMsg.buf[6] = highByte(fuelSchedule4.pw);
       outMsg.buf[7] = lowByte(fuelSchedule4.pw);
+#endif
     break;
 
     case CAN_HALTECH_LAMBDA:
@@ -348,8 +358,8 @@ void DashMessage(uint16_t DashMessageID)
 
     case CAN_HALTECH_VSS:
       temp_VSS = currentStatus.vss * 10U;
-      temp_VVT1 = currentStatus.vvt1Angle * 10U;
-      temp_VVT2 = currentStatus.vvt2Angle * 10U;
+      temp_VVT1 = currentStatus.vvt1.angle * 10U;
+      temp_VVT2 = currentStatus.vvt2.angle * 10U;
       outMsg.len = 8;
       outMsg.buf[0] = highByte(temp_VSS);
       outMsg.buf[1] = lowByte(temp_VSS);
@@ -763,7 +773,7 @@ void obd_response(uint8_t PIDmode, uint8_t requestedPIDlow, uint8_t requestedPID
     else if (requestedPIDhigh == 0x78)
     {
       int16_t tempValue;
-      tempValue = ProgrammableIOGetData(requestedPIDlow);
+      tempValue = programmableIOGetData(requestedPIDlow);
       outMsg.buf[0] =  0x06;                 // sending 6 bytes
       outMsg.buf[1] =  0x62;                 // Same as query, except that 40h is added to the mode value. So:62h = custom mode
       outMsg.buf[2] =  requestedPIDlow;      // PID code
@@ -789,7 +799,7 @@ void readAuxCanBus()
         // Gets the one-byte value from the Data Field.
         currentStatus.canin[i] = inMsg.buf[configPage9.caninput_source_start_byte[i]];
       }
-      else
+      else if (configPage9.caninput_source_start_byte[i] < (_countof(inMsg.buf) - 1U)) // a 2-byte value can't start at the last byte of the CAN payload
       {
         if (configPage9.caninputEndianess == 1)
         {
@@ -802,6 +812,7 @@ void readAuxCanBus()
           currentStatus.canin[i] = ((inMsg.buf[configPage9.caninput_source_start_byte[i]] << 8) | (inMsg.buf[configPage9.caninput_source_start_byte[i] + 1]));
         }
       }
+      else { /* Misconfigured: 2-byte value can't start at byte 7. Leave canin[i] unchanged. */ }
     }
   } 
 }

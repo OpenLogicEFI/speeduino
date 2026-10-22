@@ -39,7 +39,7 @@
 template <typename TUser,
           typename TRaw>
 struct conversionFactor {
-    uint16_t scale;    ///< Scale factor, must be >0
+    TUser scale;       ///< Scale factor, must be >0
     int16_t translate; ///< Translation - can be negative
 
     /**
@@ -49,7 +49,7 @@ struct conversionFactor {
      * into the destination type after translation & scaling
      */
     constexpr TUser toUser(TRaw raw) const {
-        return ((TUser)raw + (TUser)translate) * (TUser)scale;
+        return ((TUser)raw + (TUser)translate) * scale;
     }
 
     /**
@@ -67,7 +67,7 @@ private:
     constexpr TRaw scaleUser(TUser user) const {
         // Since all conversionFactor instances are constexpr, compiler will heavily
         // optimize this. E.g. removing division or replacing with shift & multiply.
-        return user / (TUser)scale;
+        return user / scale;
     }
 };
 
@@ -98,6 +98,12 @@ static constexpr conversionFactor<int16_t, int8_t> SIGNED_RPM_MEDIUM = { .scale=
  */
 static constexpr conversionFactor<uint16_t, uint8_t> RPM_FINE = { .scale=5U, .translate=0U };
 
+/** @brief Time values stored in milliseconds 
+ * 
+ * We convert to/from µS
+ */
+static constexpr conversionFactor<uint32_t, uint32_t> TIME_MILLIS = { .scale=1000U, .translate=0U };
+
 /** @brief Time values stored in 1/10th milliseconds I.e ms/10 
  * 
  * We convert to/from µS
@@ -115,6 +121,18 @@ static constexpr conversionFactor<uint16_t, uint8_t> TIME_TWENTY_MILLIS = { .sca
  * We convert to/from µS
  */
 static constexpr conversionFactor<uint16_t, uint8_t> TIME_TEN_MILLIS = { .scale=100U, .translate=0U };
+
+/** @brief Time values stored in 2 milliseconds 
+ * 
+ * We convert to/from secs/0.1
+ */
+static constexpr conversionFactor<uint16_t, uint8_t> TIME_TWO_MILLIS = { .scale=50U, .translate=0U };
+
+/** @brief Time values stored in 100 milliseconds (tenth of a second)
+ * 
+ * We convert to/from µS
+ */
+static constexpr conversionFactor<uint32_t, uint8_t> TIME_HUNDRED_MILLIS = { .scale=100000UL, .translate=0U };
 
 /** @brief MAP values: kpa */
 static constexpr conversionFactor<uint16_t, uint8_t> MAP = { .scale=2U, .translate=0U };
@@ -139,6 +157,15 @@ static constexpr conversionFactor<int16_t, uint8_t> TEMPERATURE = { .scale=1U, .
 
 /** @brief The fuel trim tables are offset by 128 to allow for -50% to +50% values */
 static constexpr conversionFactor<int8_t, uint8_t> FUEL_TRIM = { .scale=1U, .translate=-127 };
+
+/** @brief Frequency range from 0 to 512 */
+static constexpr conversionFactor<uint16_t, uint8_t> FREQUENCY = { .scale=2U, .translate=0U };
+
+/** @brief IAC steps */
+static constexpr conversionFactor<uint16_t, uint8_t> IAC_STEPS = { .scale=3U, .translate=0U };
+
+/** @brief Pressure range from 0 to 512 kpa */
+static constexpr conversionFactor<uint16_t, uint8_t> PRESSURE = { .scale=2U, .translate=0U };
 
 ///@}
 

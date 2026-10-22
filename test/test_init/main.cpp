@@ -20,18 +20,19 @@ void prepareForInitialiseAll(uint8_t boardId) {
   // calling setTuneToEmpty & thus blatting any
   // configuration made in step 2.
   configPage2.pinMapping = boardId;
+  configPage2.nInjectors = INJ_CHANNELS;
   currentStatus.initialisationComplete = false;
 }
 
 void runAllInitTests(void)
 {
     extern void testInitialisation(void);
-    extern void testFuelScheduleInit(void);
-    extern void testIgnitionScheduleInit(void);
+    extern void testPinMapping(void);
+    extern void testPressureInputs(void);
 
     testInitialisation();
-    testFuelScheduleInit();
-    testIgnitionScheduleInit();
+    testPinMapping();
+    testPressureInputs();
 }
 
 TEST_HARNESS(runAllInitTests)

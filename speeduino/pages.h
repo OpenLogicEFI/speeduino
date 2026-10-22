@@ -27,6 +27,21 @@ constexpr uint8_t boostvvtPage2 = 15;
 constexpr uint8_t MIN_PAGE_NUM  = veSetPage;
 constexpr uint8_t MAX_PAGE_NUM  = (boostvvtPage2+1U);
 
+/** @name Calibration page numbers */
+///@{
+constexpr uint8_t O2_CALIBRATION_PAGE = MAX_PAGE_NUM+1; ///< O2 sensor calibration table page number
+constexpr uint8_t IAT_CALIBRATION_PAGE = O2_CALIBRATION_PAGE+1; ///< IAT sensor calibration table page number
+constexpr uint8_t CLT_CALIBRATION_PAGE = IAT_CALIBRATION_PAGE+1; ///< Coolant sensor calibration table page number
+
+/** @name Calibration page sub-indexes */
+///@{
+constexpr uint8_t PAGE_IDX_CALIBRATION_CRC = 0; ///< Index of a calibration table CRC on a "page"
+constexpr uint8_t PAGE_IDX_CALIBRATION_VALUES = 1; ///< Index of a calibration table values on a "page"
+constexpr uint8_t PAGE_IDX_CALIBRATION_BINS = 2; ///< Index of a calibration table bins on a "page"
+///@}
+
+///@}
+
 /** @brief Fill the tune (config pages & tables) with zeroes. */
 void setTuneToEmpty(void);
 
@@ -183,42 +198,18 @@ byte getEntityValue(const entity_t &entity,  /**< [in] The entity to update */
                     uint16_t offset          /**< [in] The offset within the entity */
                     );
 
-/**
- * @brief Sets a single value from a page, with data aligned as per the ini file
- * @returns true if value set, false otherwise
- */
+/** @brief Sets a single value from a page, with data aligned as per the ini file */
 bool setEntityValue(entity_t &entity,  /**< [in] The entity to update */ 
                     uint16_t offset,   /**< [in] The offset within the entity */
                     byte value         /**< [in] The new value */
                     );
 
 /**
- * Initiates iteration over a pages entities.
+ * @brief Initiates iteration over a pages entities.
+ * 
  * Test `entity.type==End` to determine the end of the page.
  */
 page_iterator_t page_begin(uint8_t pageNum /**< [in] The page number to iterate over. */);
 
-/**
- * Moves the iterator to the next sub-entity on the page
- */
+/** @brief Moves the iterator to the next sub-entity on the page */
 page_iterator_t advance(const page_iterator_t &it /**< [in] The current iterator */);
-
-/**
- * Convert page iterator to table value iterator.
- */
-table_value_iterator rows_begin(const page_iterator_t &it);
-
-/**
- * Convert page iterator to table x axis iterator.
- */
-table_axis_iterator x_begin(const page_iterator_t &it);
-
-/**
- * Convert page iterator to table x axis iterator.
- */
-table_axis_iterator x_rbegin(const page_iterator_t &it);
-
-/**
- * Convert page iterator to table y axis iterator.
- */
-table_axis_iterator y_begin(const page_iterator_t &it);

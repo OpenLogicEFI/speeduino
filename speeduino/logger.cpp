@@ -9,8 +9,8 @@
 #include "decoder_init.h"
 #include "scheduledIO_inj.h"
 #include "resetControl.h"
-#include "scheduler.h"
 #include "scheduler_fuel_controller.h"
+#include "src/controllers/progammableIO/programmableIOControl.h"
 
 static byte setStatusBit(byte status, uint8_t index, bool bit)
 {
@@ -19,13 +19,13 @@ static byte setStatusBit(byte status, uint8_t index, bool bit)
 }
 
 // Templated recursion terminates here
-static inline byte setStatusBits(byte status, bool (&bits)[1])
+static inline byte setStatusBits(byte status, bool (&bits)[1]) noexcept
 {
   return setStatusBit(status, 0U, bits[0U]);
 }
 
 template <uint8_t N>
-static inline byte setStatusBits(byte status, bool (&bits)[N])
+static inline byte setStatusBits(byte status, bool (&bits)[N]) noexcept
 {
   using shorter_t = bool(&)[N-1U];
   // Recurse 
@@ -51,8 +51,8 @@ static byte buildStatus1(const statuses &current)
 static byte buildStatus2(const statuses &current)
 {
   bool bits[] = {
-    current.hardLaunchActive,
-    current.softLaunchActive,
+    current.launchStatus.launchingHard,
+    current.launchStatus.launchingSoft,
     current.schedulerCutState.status == SchedulerCutStatus::Full,
     current.softLimitActive,
     false, // Unused
@@ -73,7 +73,7 @@ static byte buildStatus3(const statuses &current)
     current.decoder.getStatus().syncStatus==SyncStatus::Partial,
   };
   byte status3 = setStatusBits(0U, bits);
-  status3 |= (current.nSquirtsStatus << 5U); // Uses bits 5-7
+  status3 |= (current.nSquirts << 5U); // Uses bits 5-7
   return status3;
 }
 
@@ -81,9 +81,9 @@ static byte buildStatus4(const statuses &current)
 {
   bool bits[] = {
     current.wmiTankEmpty,
-    current.vvt1AngleError,
-    current.vvt2AngleError,
-    current.fanOn,
+    current.vvt1.angleError,
+    current.vvt2.angleError,
+    current.fanDuty!=0,
     current.burnPending,
     current.stagingActive,
     current.commCompat,
@@ -96,11 +96,11 @@ static byte buildStatus5(const statuses &current)
 {
   bool bits[] = {
     false, // Unused
-    current.flatShiftSoftCut,
+    current.launchStatus.flatShiftingSoft,
     current.secondSparkTableActive,
     current.knockRetardActive,
     current.knockPulseDetected,
-    current.clutchTriggerActive,
+    current.launchStatus.clutchTrigger,
   };
   return setStatusBits(0U, bits);
 }
@@ -144,13 +144,13 @@ byte buildSdCardStatus(const statuses &current)
 static byte buildAirConStatus(const statuses &current)
 {
   bool bits[] = {
-    current.airconRequested,
-    current.airconCompressorOn,
-    current.airconRpmLockout,
-    current.airconTpsLockout,
-    current.airconTurningOn,
-    current.airconCltLockout,
-    current.airconFanOn,
+    current.acStatus.acRequested,
+    current.acStatus.compressorOn,
+    current.acStatus.rpmLockoutActive,
+    current.acStatus.tpsLockoutActive,
+    current.acStatus.turningOn,
+    current.acStatus.cltLockoutActive,
+    current.acStatus.fanOn,
   };
   return setStatusBits(0, bits);
 }
@@ -285,12 +285,18 @@ byte getTSLogEntry(uint16_t byteNum)
 
     case 76: statusValue = lowByte(fuelSchedule1.pw); break;
     case 77: statusValue = highByte(fuelSchedule1.pw); break;
+#if (INJ_CHANNELS >= 2)
     case 78: statusValue = lowByte(fuelSchedule2.pw); break;
     case 79: statusValue = highByte(fuelSchedule2.pw); break;
+#endif
+#if (INJ_CHANNELS >= 3)
     case 80: statusValue = lowByte(fuelSchedule3.pw); break;
     case 81: statusValue = highByte(fuelSchedule3.pw); break;
+#endif
+#if (INJ_CHANNELS >= 4)
     case 82: statusValue = lowByte(fuelSchedule4.pw); break;
     case 83: statusValue = highByte(fuelSchedule4.pw); break;
+#endif
 
     case 84: statusValue = buildStatus3(currentStatus); break;
     case 85: statusValue = buildEngineProtectStatus(currentStatus); break;
@@ -303,10 +309,10 @@ byte getTSLogEntry(uint16_t byteNum)
     case 92: statusValue = currentStatus.CLIdleTarget; break;
     case 93: statusValue = lowByte(currentStatus.mapDOT); break;
     case 94: statusValue = highByte(currentStatus.mapDOT); break;
-    case 95: statusValue = lowByte(currentStatus.vvt1Angle); break; //2 bytes for vvt1Angle
-    case 96: statusValue = highByte(currentStatus.vvt1Angle); break;
-    case 97: statusValue = currentStatus.vvt1TargetAngle; break;
-    case 98: statusValue = lowByte(currentStatus.vvt1Duty); break;
+    case 95: statusValue = lowByte(currentStatus.vvt1.angle); break; //2 bytes for vvt1.angle
+    case 96: statusValue = highByte(currentStatus.vvt1.angle); break;
+    case 97: statusValue = currentStatus.vvt1.targetAngle; break;
+    case 98: statusValue = currentStatus.vvt1.duty; break;
     case 99: statusValue = lowByte(currentStatus.flexBoostCorrection); break;
     case 100: statusValue = highByte(currentStatus.flexBoostCorrection); break;
     case 101: statusValue = currentStatus.baroCorrection; break;
@@ -319,11 +325,11 @@ byte getTSLogEntry(uint16_t byteNum)
     case 108: statusValue = currentStatus.oilPressure; break;
     case 109: statusValue = currentStatus.wmiPW; break;
     case 110: statusValue = buildStatus4(currentStatus); break;
-    case 111: statusValue = lowByte(currentStatus.vvt2Angle); break; //2 bytes for vvt2Angle
-    case 112: statusValue = highByte(currentStatus.vvt2Angle); break;
-    case 113: statusValue = currentStatus.vvt2TargetAngle; break;
-    case 114: statusValue = lowByte(currentStatus.vvt2Duty); break;
-    case 115: statusValue = currentStatus.outputsStatus; break;
+    case 111: statusValue = lowByte(currentStatus.vvt2.angle); break; //2 bytes for vvt2.angle
+    case 112: statusValue = highByte(currentStatus.vvt2.angle); break;
+    case 113: statusValue = currentStatus.vvt2.targetAngle; break;
+    case 114: statusValue = currentStatus.vvt2.duty; break;
+    case 115: statusValue = getProgrammableIOOutputStatus(); break;
     case 116: statusValue = temperatureAddOffset(currentStatus.fuelTemp); break; //Fuel temperature from flex sensor
     case 117: statusValue = currentStatus.fuelTempCorrection; break; //Fuel temperature Correction (%)
     case 118: statusValue = currentStatus.advance1; break; //advance 1 (%)
@@ -439,10 +445,16 @@ int16_t getReadableLogEntry(uint16_t logIndex)
     case 52: statusValue = 0U /*getNextError()*/; break;
 
     case 53: statusValue = fuelSchedule1.pw; break;
+#if (INJ_CHANNELS >= 2)
     case 54: statusValue = fuelSchedule2.pw; break;
+#endif
+#if (INJ_CHANNELS >= 3)
     case 55: statusValue = fuelSchedule3.pw; break;
+#endif
+#if (INJ_CHANNELS >= 4)
     case 56: statusValue = fuelSchedule4.pw; break;
-  
+#endif
+
     case 57: statusValue = buildStatus3(currentStatus); break;
     case 58: statusValue = buildEngineProtectStatus(currentStatus); break;
 
@@ -453,9 +465,9 @@ int16_t getReadableLogEntry(uint16_t logIndex)
     case 62: statusValue = (int16_t)currentStatus.dwell; break;
     case 63: statusValue = currentStatus.CLIdleTarget; break;
     case 64: statusValue = currentStatus.mapDOT; break;
-    case 65: statusValue = currentStatus.vvt1Angle; break;
-    case 66: statusValue = currentStatus.vvt1TargetAngle; break;
-    case 67: statusValue = currentStatus.vvt1Duty; break;
+    case 65: statusValue = currentStatus.vvt1.angle; break;
+    case 66: statusValue = currentStatus.vvt1.targetAngle; break;
+    case 67: statusValue = currentStatus.vvt1.duty; break;
     case 68: statusValue = currentStatus.flexBoostCorrection; break;
     case 69: statusValue = currentStatus.baroCorrection; break;
     case 70: statusValue = currentStatus.VE; break; //Current VE (%). Can be equal to VE1 or VE2 or a calculated value from both of them
@@ -466,10 +478,10 @@ int16_t getReadableLogEntry(uint16_t logIndex)
     case 75: statusValue = currentStatus.oilPressure; break;
     case 76: statusValue = currentStatus.wmiPW; break;
     case 77: statusValue = buildStatus4(currentStatus); break;
-    case 78: statusValue = currentStatus.vvt2Angle; break; //2 bytes for vvt2Angle
-    case 79: statusValue = currentStatus.vvt2TargetAngle; break;
-    case 80: statusValue = currentStatus.vvt2Duty; break;
-    case 81: statusValue = currentStatus.outputsStatus; break;
+    case 78: statusValue = currentStatus.vvt2.angle; break; //2 bytes for vvt2.angle
+    case 79: statusValue = currentStatus.vvt2.targetAngle; break;
+    case 80: statusValue = currentStatus.vvt2.duty; break;
+    case 81: statusValue = getProgrammableIOOutputStatus(); break;
     case 82: statusValue = currentStatus.fuelTemp; break; //Fuel temperature from flex sensor
     case 83: statusValue = currentStatus.fuelTempCorrection; break; //Fuel temperature Correction (%)
     case 84: statusValue = currentStatus.advance1; break; //advance 1 (%)
@@ -501,13 +513,13 @@ int16_t getReadableLogEntry(uint16_t logIndex)
   return statusValue;
 }
 
+#if defined(FPU_MAX_SIZE) && FPU_MAX_SIZE >= 32 //cppcheck-suppress misra-c2012-20.9
 /** 
  * An expansion to the @ref getReadableLogEntry function for systems that have an FPU. It will provide a floating point value for any parameter that this is appropriate for, otherwise will return the result of @ref getReadableLogEntry.
  * See logger.h for the field names and order
  * @param logIndex - The log index required. Note that this is NOT the byte number, but the index in the log
  * @return float value of the requested log entry. 
  */
-#if defined(FPU_MAX_SIZE) && FPU_MAX_SIZE >= 32 //cppcheck-suppress misra-c2012-20.9
 float getReadableFloatLogEntry(uint16_t logIndex)
 {
   float statusValue = 0.0;
@@ -521,9 +533,15 @@ float getReadableFloatLogEntry(uint16_t logIndex)
     case 33: statusValue = currentStatus.O2_2 / 10.0; break; //O2
 
     case 53: statusValue = fuelSchedule1.pw / 1000.0; break; //Pulsewidth 1 Have to convert from uS to mS.
+#if (INJ_CHANNELS >= 2)
     case 54: statusValue = fuelSchedule2.pw / 1000.0; break; //Pulsewidth 2 Have to convert from uS to mS.
+#endif
+#if (INJ_CHANNELS >= 3)
     case 55: statusValue = fuelSchedule3.pw / 1000.0; break; //Pulsewidth 3 Have to convert from uS to mS.
+#endif
+#if (INJ_CHANNELS >= 4)
     case 56: statusValue = fuelSchedule4.pw / 1000.0; break; //Pulsewidth 4 Have to convert from uS to mS.
+#endif
 
     default: statusValue = getReadableLogEntry(logIndex); break; //If logIndex value is NOT a float based one, use the regular function
   }
@@ -619,12 +637,18 @@ uint8_t getLegacySecondarySerialLogEntry(uint16_t byteNum)
     case 74: statusValue = 0U /*getNextError()*/; break; // errorNum (0:1), currentError(2:7)
 
     case 75: statusValue = currentStatus.launchCorrection; break;
+#if INJ_CHANNELS>=2
     case 76: statusValue = lowByte(fuelSchedule2.pw); break; //Pulsewidth 2 multiplied by 10 in ms. Have to convert from uS to mS.
     case 77: statusValue = highByte(fuelSchedule2.pw); break; //Pulsewidth 2 multiplied by 10 in ms. Have to convert from uS to mS.
+#endif
+#if INJ_CHANNELS>=3
     case 78: statusValue = lowByte(fuelSchedule3.pw); break; //Pulsewidth 3 multiplied by 10 in ms. Have to convert from uS to mS.
     case 79: statusValue = highByte(fuelSchedule3.pw); break; //Pulsewidth 3 multiplied by 10 in ms. Have to convert from uS to mS.
+#endif
+#if INJ_CHANNELS>=4
     case 80: statusValue = lowByte(fuelSchedule4.pw); break; //Pulsewidth 4 multiplied by 10 in ms. Have to convert from uS to mS.
     case 81: statusValue = highByte(fuelSchedule4.pw); break; //Pulsewidth 4 multiplied by 10 in ms. Have to convert from uS to mS.
+#endif
 
     case 82: statusValue = buildStatus3(currentStatus); break;
     case 83: statusValue = buildEngineProtectStatus(currentStatus); break; //RPM(0), MAP(1), OIL(2), AFR(3), Unused(4:7)
@@ -637,9 +661,9 @@ uint8_t getLegacySecondarySerialLogEntry(uint16_t byteNum)
     case 90: statusValue = currentStatus.idleLoad; break;
     case 91: statusValue = currentStatus.CLIdleTarget; break; //closed loop idle target
     case 92: statusValue = currentStatus.mapDOT / 10; break; //rate of change of the map 
-    case 93: statusValue = (int8_t)currentStatus.vvt1Angle; break;
-    case 94: statusValue = currentStatus.vvt1TargetAngle; break;
-    case 95: statusValue = currentStatus.vvt1Duty; break;
+    case 93: statusValue = (int8_t)currentStatus.vvt1.angle; break;
+    case 94: statusValue = currentStatus.vvt1.targetAngle; break;
+    case 95: statusValue = currentStatus.vvt1.duty; break;
     case 96: statusValue = lowByte(currentStatus.flexBoostCorrection); break;
     case 97: statusValue = highByte(currentStatus.flexBoostCorrection); break;
     case 98: statusValue = currentStatus.baroCorrection; break;
@@ -651,10 +675,10 @@ uint8_t getLegacySecondarySerialLogEntry(uint16_t byteNum)
     case 104: statusValue = currentStatus.oilPressure; break;
     case 105: statusValue = currentStatus.wmiPW; break;
     case 106: statusValue = buildStatus4(currentStatus); break;
-    case 107: statusValue = (int8_t)currentStatus.vvt2Angle; break;
-    case 108: statusValue = currentStatus.vvt2TargetAngle; break;
-    case 109: statusValue = currentStatus.vvt2Duty; break;
-    case 110: statusValue = currentStatus.outputsStatus; break;
+    case 107: statusValue = (int8_t)currentStatus.vvt2.angle; break;
+    case 108: statusValue = currentStatus.vvt2.targetAngle; break;
+    case 109: statusValue = currentStatus.vvt2.duty; break;
+    case 110: statusValue = getProgrammableIOOutputStatus(); break;
     case 111: statusValue = temperatureAddOffset(currentStatus.fuelTemp); break; //Fuel temperature from flex sensor
     case 112: statusValue = currentStatus.fuelTempCorrection; break; //Fuel temperature Correction (%)
     case 113: statusValue = currentStatus.VE1; break; //VE 1 (%)
@@ -715,18 +739,18 @@ void startToothLogger(void)
   toothHistoryIndex = 0U;
 
   //Disconnect the standard interrupt and add the logger version
-  attachLoggerInterrupt( pinTrigger, loggerPrimaryISR );
+  attachLoggerInterrupt( pinNumbers.pinTrigger, loggerPrimaryISR );
 
   if(VSS_USES_RPM2() != true)
   {
-    attachLoggerInterrupt( pinTrigger2, loggerSecondaryISR );
+    attachLoggerInterrupt( pinNumbers.pinTrigger2, loggerSecondaryISR );
   }
 }
 
-static inline void detachLoggerInterrupt(uint8_t pin, const interrupt_t &decoderInterrupt)
+static inline void detachLoggerInterrupt(uint8_t pin, interrupt_t &decoderInterrupt)
 {
   detachInterrupt( digitalPinToInterrupt(pin) );
-  decoderInterrupt.attach(pin);
+ (void)decoderInterrupt.attach(pin);
 }
 
 void stopToothLogger(void)
@@ -734,11 +758,11 @@ void stopToothLogger(void)
   currentStatus.toothLogEnabled = false;
 
   //Disconnect the logger interrupts and attach the normal ones
-  detachLoggerInterrupt( pinTrigger, currentStatus.decoder.primary );
+  detachLoggerInterrupt( pinNumbers.pinTrigger, currentStatus.decoder.primary );
 
   if(VSS_USES_RPM2() != true)
   {
-    detachLoggerInterrupt( pinTrigger2, currentStatus.decoder.secondary );
+    detachLoggerInterrupt( pinNumbers.pinTrigger2, currentStatus.decoder.secondary );
   }
 }
 
@@ -750,11 +774,11 @@ void startCompositeLogger(void)
   toothHistoryIndex = 0U;
 
   //Disconnect the standard interrupt and add the logger version
-  attachLoggerInterrupt( pinTrigger, loggerPrimaryISR );
+  attachLoggerInterrupt( pinNumbers.pinTrigger, loggerPrimaryISR );
 
   if( (VSS_USES_RPM2() != true) && (FLEX_USES_RPM2() != true) )
   {
-    attachLoggerInterrupt( pinTrigger2, loggerSecondaryISR );
+    attachLoggerInterrupt( pinNumbers.pinTrigger2, loggerSecondaryISR );
   }
 }
 
@@ -763,11 +787,11 @@ void stopCompositeLogger(void)
   currentStatus.compositeTriggerUsed = 0U;
 
   //Disconnect the logger interrupts and attach the normal ones
-  detachLoggerInterrupt( pinTrigger, currentStatus.decoder.primary );
+  detachLoggerInterrupt( pinNumbers.pinTrigger, currentStatus.decoder.primary );
 
   if( (VSS_USES_RPM2() != true) && (FLEX_USES_RPM2() != true) )
   {
-    detachLoggerInterrupt( pinTrigger2, currentStatus.decoder.secondary );
+    detachLoggerInterrupt( pinNumbers.pinTrigger2, currentStatus.decoder.secondary );
   }
 }
 
@@ -779,8 +803,8 @@ void startCompositeLoggerTertiary(void)
   toothHistoryIndex = 0U;
 
   //Disconnect the standard interrupt and add the logger version
-  attachLoggerInterrupt( pinTrigger, loggerPrimaryISR );
-  attachLoggerInterrupt( pinTrigger3, loggerTertiaryISR );
+  attachLoggerInterrupt( pinNumbers.pinTrigger, loggerPrimaryISR );
+  attachLoggerInterrupt( pinNumbers.pinTrigger3, loggerTertiaryISR );
 }
 
 void stopCompositeLoggerTertiary(void)
@@ -788,8 +812,8 @@ void stopCompositeLoggerTertiary(void)
   currentStatus.compositeTriggerUsed = 0;
 
   //Disconnect the logger interrupts and attach the normal ones
-  detachLoggerInterrupt( pinTrigger, currentStatus.decoder.primary );
-  detachLoggerInterrupt( pinTrigger3, currentStatus.decoder.tertiary );
+  detachLoggerInterrupt( pinNumbers.pinTrigger, currentStatus.decoder.primary );
+  detachLoggerInterrupt( pinNumbers.pinTrigger3, currentStatus.decoder.tertiary );
 }
 
 
@@ -803,10 +827,10 @@ void startCompositeLoggerCams(void)
   //Disconnect the standard interrupt and add the logger version
   if( (VSS_USES_RPM2() != true) && (FLEX_USES_RPM2() != true) )
   {
-    attachLoggerInterrupt( pinTrigger2, loggerSecondaryISR );
+    attachLoggerInterrupt( pinNumbers.pinTrigger2, loggerSecondaryISR );
   }
 
-  attachLoggerInterrupt( pinTrigger3, loggerTertiaryISR );
+  attachLoggerInterrupt( pinNumbers.pinTrigger3, loggerTertiaryISR );
 }
 
 void stopCompositeLoggerCams(void)
@@ -816,8 +840,8 @@ void stopCompositeLoggerCams(void)
   //Disconnect the logger interrupts and attach the normal ones
   if( (VSS_USES_RPM2() != true) && (FLEX_USES_RPM2() != true) )
   {
-    detachLoggerInterrupt( pinTrigger2, currentStatus.decoder.secondary );
+    detachLoggerInterrupt( pinNumbers.pinTrigger2, currentStatus.decoder.secondary );
   }
 
-  detachLoggerInterrupt( pinTrigger3, currentStatus.decoder.tertiary );
+  detachLoggerInterrupt( pinNumbers.pinTrigger3, currentStatus.decoder.tertiary );
 }

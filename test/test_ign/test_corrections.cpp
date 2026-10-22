@@ -28,6 +28,16 @@ static void test_correctionFixedTiming(void) {
     RUN_TEST_P(test_correctionFixedTiming_active);
 }
 
+static void test_correctionsIgn_dispatch(void) {
+    initialiseCorrections();
+    currentStatus.LOOP_TIMER = 0U;
+    configPage10.knock_mode = KNOCK_MODE_OFF;
+    configPage2.fixAngEnable = 1U;
+    configPage4.FixAng = 17;
+
+    TEST_ASSERT_EQUAL(17, correctionsIgn(-8));
+}
+
 extern int8_t correctionCLTadvance(int8_t advance);
 extern table2D_u8_u8_6 CLTAdvanceTable; ///< 6 bin ignition adjustment based on coolant temperature  (2D)
 
@@ -546,223 +556,260 @@ static void test_correctionNitrous(void) {
 
 extern int8_t correctionSoftLaunch(int8_t advance);
 
-static void setup_correctionSoftLaunch(void) {
-    configPage6.launchEnabled = 1;
-    configPage6.flatSArm = 20;
-    configPage6.lnchSoftLim = 40;
-    configPage10.lnchCtrlTPS = 80;
-    configPage10.lnchCtrlVss = 50;
-    configPage2.vssMode = 2;
+// static void setup_correctionSoftLaunch(void) {
+//     configPage6.launchEnabled = 1;
+//     configPage6.flatSArm = 20;
+//     configPage6.lnchSoftLim = 40;
+//     configPage10.lnchCtrlTPS = 80;
+//     configPage10.lnchCtrlVss = 50;
+//     configPage2.vssMode = 2;
     
-    currentStatus.clutchTrigger = 1;
-    currentStatus.clutchEngagedRPM = ((configPage6.flatSArm) * 100) - 100;
-    currentStatus.setRpm( ((configPage6.lnchSoftLim) * 100) + 100);
-    currentStatus.TPS = configPage10.lnchCtrlTPS + 1;
-    currentStatus.vss = 30;
-}
+// }
 
 static void test_correctionSoftLaunch_on(void) {
-    setup_correctionSoftLaunch();
-
+    currentStatus.launchStatus.launchingSoft = true;
     configPage6.lnchRetard = -3;
     TEST_ASSERT_EQUAL(configPage6.lnchRetard, correctionSoftLaunch(-8));
-    TEST_ASSERT_TRUE(currentStatus.launchingSoft);
-    TEST_ASSERT_TRUE(currentStatus.softLaunchActive);
-
-    configPage6.lnchRetard = 3;
-    currentStatus.launchingSoft = false;
-    currentStatus.softLaunchActive = false;
-    TEST_ASSERT_EQUAL(configPage6.lnchRetard, correctionSoftLaunch(8));
-    TEST_ASSERT_TRUE(currentStatus.launchingSoft);
-    TEST_ASSERT_TRUE(currentStatus.softLaunchActive);
 }
 
-static void test_correctionSoftLaunch_off_disabled(void) {
-    setup_correctionSoftLaunch();
-    configPage6.launchEnabled = 0;
+static void test_correctionSoftLaunch_off(void) {
+    currentStatus.launchStatus.launchingSoft = false;
     configPage6.lnchRetard = -3;
-
     TEST_ASSERT_EQUAL(-8, correctionSoftLaunch(-8));
-    TEST_ASSERT_FALSE(currentStatus.launchingSoft);
-    TEST_ASSERT_FALSE(currentStatus.softLaunchActive);
-}
-
-static void test_correctionSoftLaunch_off_noclutchtrigger(void) {
-    setup_correctionSoftLaunch();
-    currentStatus.clutchTrigger = 0;
-    configPage6.lnchRetard = -3;
-
-    TEST_ASSERT_EQUAL(-8, correctionSoftLaunch(-8));
-    TEST_ASSERT_FALSE(currentStatus.launchingSoft);
-    TEST_ASSERT_FALSE(currentStatus.softLaunchActive);
-}
-
-static void test_correctionSoftLaunch_off_clutchrpmlow(void) {
-    setup_correctionSoftLaunch();
-    currentStatus.clutchEngagedRPM = (configPage6.flatSArm * 100) + 1;
-    configPage6.lnchRetard = -3;
-
-    TEST_ASSERT_EQUAL(-8, correctionSoftLaunch(-8));
-    TEST_ASSERT_FALSE(currentStatus.launchingSoft);
-    TEST_ASSERT_FALSE(currentStatus.softLaunchActive);
-}
-
-static void test_correctionSoftLaunch_off_rpmlimit(void) {
-    setup_correctionSoftLaunch();
-    currentStatus.setRpm( (configPage6.lnchSoftLim * 100) - 1);
-    configPage6.lnchRetard = -3;
-
-    TEST_ASSERT_EQUAL(-8, correctionSoftLaunch(-8));
-    TEST_ASSERT_FALSE(currentStatus.launchingSoft);
-    TEST_ASSERT_FALSE(currentStatus.softLaunchActive);
-}
-
-static void test_correctionSoftLaunch_off_tpslow(void) {
-    setup_correctionSoftLaunch();
-    currentStatus.TPS = configPage10.lnchCtrlTPS - 1;
-    configPage6.lnchRetard = -3;
-
-    TEST_ASSERT_EQUAL(-8, correctionSoftLaunch(-8));
-    TEST_ASSERT_FALSE(currentStatus.launchingSoft);
-    TEST_ASSERT_FALSE(currentStatus.softLaunchActive);
-}
-
-static void test_correctionSoftLaunch_off_vsslimit(void) {
-    setup_correctionSoftLaunch();
-    currentStatus.vss = 100; //VSS above limit of 80
-
-    TEST_ASSERT_EQUAL(-8, correctionSoftLaunch(-8));
-    TEST_ASSERT_FALSE(currentStatus.launchingSoft);
-    TEST_ASSERT_FALSE(currentStatus.softLaunchActive);
 }
 
 static void test_correctionSoftLaunch(void) {
     RUN_TEST_P(test_correctionSoftLaunch_on);
-    RUN_TEST_P(test_correctionSoftLaunch_off_disabled);
-    RUN_TEST_P(test_correctionSoftLaunch_off_noclutchtrigger);
-    RUN_TEST_P(test_correctionSoftLaunch_off_clutchrpmlow);
-    RUN_TEST_P(test_correctionSoftLaunch_off_rpmlimit);
-    RUN_TEST_P(test_correctionSoftLaunch_off_tpslow);
-    RUN_TEST_P(test_correctionSoftLaunch_off_vsslimit);
+    RUN_TEST_P(test_correctionSoftLaunch_off);
 }
 
 extern int8_t correctionSoftFlatShift(int8_t advance);
 
-static void setup_correctionSoftFlatShift(void) {
-    configPage6.flatSEnable = 1;
-    configPage6.flatSArm = 10;
-    configPage6.flatSSoftWin = 10;
-    
-    currentStatus.clutchTrigger = 1;
-    currentStatus.clutchEngagedRPM = ((configPage6.flatSArm) * 100) + 500;
-    currentStatus.setRpm( currentStatus.clutchEngagedRPM + 600);
-
-    currentStatus.flatShiftSoftCut = false;
-}
-
 static void test_correctionSoftFlatShift_on(void) {
-    setup_correctionSoftFlatShift();
+    currentStatus.launchStatus.flatShiftingSoft = true;
     configPage6.flatSRetard = -3;
 
     TEST_ASSERT_EQUAL(configPage6.flatSRetard, correctionSoftFlatShift(-8));
-    TEST_ASSERT_TRUE(currentStatus.flatShiftSoftCut);
-
-    currentStatus.flatShiftSoftCut = false;
-    TEST_ASSERT_EQUAL(configPage6.flatSRetard, correctionSoftFlatShift(3));
-    TEST_ASSERT_TRUE(currentStatus.flatShiftSoftCut);
 }
 
-static void test_correctionSoftFlatShift_off_disabled(void) {
-    setup_correctionSoftFlatShift();
+static void test_correctionSoftFlatShift_off(void) {
+    currentStatus.launchStatus.flatShiftingSoft = false;
     configPage6.flatSRetard = -3;
-    configPage6.flatSEnable = 0;
 
-    currentStatus.flatShiftSoftCut = true;
     TEST_ASSERT_EQUAL(-8, correctionSoftFlatShift(-8));
-    TEST_ASSERT_FALSE(currentStatus.flatShiftSoftCut);
-}
-
-static void test_correctionSoftFlatShift_off_noclutchtrigger(void) {
-    setup_correctionSoftFlatShift();
-    configPage6.flatSRetard = -3;
-    currentStatus.clutchTrigger = 0;
-
-    currentStatus.flatShiftSoftCut = true;
-    TEST_ASSERT_EQUAL(-8, correctionSoftFlatShift(-8));
-    TEST_ASSERT_FALSE(currentStatus.flatShiftSoftCut);
-}
-
-static void test_correctionSoftFlatShift_off_clutchrpmtoolow(void) {
-    setup_correctionSoftFlatShift();
-    configPage6.flatSRetard = -3;
-    currentStatus.clutchEngagedRPM = ((configPage6.flatSArm) * 100) - 500;
-
-    currentStatus.flatShiftSoftCut = true;
-    TEST_ASSERT_EQUAL(-8, correctionSoftFlatShift(-8));
-    TEST_ASSERT_FALSE(currentStatus.flatShiftSoftCut);
-}
-
-static void test_correctionSoftFlatShift_off_rpmnotinwindow(void) {
-    setup_correctionSoftFlatShift();
-    configPage6.flatSRetard = -3;
-    currentStatus.setRpm( (currentStatus.clutchEngagedRPM - (configPage6.flatSSoftWin * 100) ) - 100);
-
-    currentStatus.flatShiftSoftCut = true;
-    TEST_ASSERT_EQUAL(-8, correctionSoftFlatShift(-8));
-    TEST_ASSERT_FALSE(currentStatus.flatShiftSoftCut);
 }
 
 static void test_correctionSoftFlatShift(void) {
     RUN_TEST_P(test_correctionSoftFlatShift_on);
-    RUN_TEST_P(test_correctionSoftFlatShift_off_disabled);
-    RUN_TEST_P(test_correctionSoftFlatShift_off_noclutchtrigger);
-    RUN_TEST_P(test_correctionSoftFlatShift_off_clutchrpmtoolow);
-    RUN_TEST_P(test_correctionSoftFlatShift_off_rpmnotinwindow);
+    RUN_TEST_P(test_correctionSoftFlatShift_off);
 }
 
-#if 0 // Wait until Noisymime is done with knock implementation
-extern int8_t correctionKnock(int8_t advance);
+extern int8_t correctionKnockTiming(int8_t advance, uint32_t currMicros, uint8_t (*fnGetAnalogKnock)(void));
+extern uint8_t _calculateKnockRecovery(uint8_t curKnockRetard, uint32_t currMicros);
+extern uint32_t knockStartTime;
+extern uint8_t knockLastRecoveryStep;
+static uint8_t analogKnockReading;
 
-static void setup_correctionKnock(void) {
-    configPage10.knock_mode = KNOCK_MODE_DIGITAL;
-    configPage10.knock_count = 5U;
+static uint8_t stubGetAnalogKnock(void) {
+    return analogKnockReading;
+}
+
+static void setup_correctionKnockTiming(uint8_t mode) {
+    initialiseCorrections();
+
+    configPage10.knock_mode = mode;
+    configPage10.knock_count = 2U;
+    configPage10.knock_maxRetard = 10U;
     configPage10.knock_firstStep = 3U;
-    // knockCounter = configPage10.knock_count + 1;
-//   TEST_DATA_P uint8_t startBins[] = { 30, 40, 50, 60, 70, 80 };
-//   TEST_DATA_P uint8_t startValues[] = { 30, 25, 20, 15, 10, 5 };
-//   populate_2dtable_P(&knockWindowStartTable, startValues, startBins);
+    configPage10.knock_stepSize = 2U;
+    configPage10.knock_stepTime = 0U;
+    configPage10.knock_duration = 100U;
+    configPage10.knock_recoveryStepTime = 1U;
+    configPage10.knock_recoveryStep = 1U;
 
-//   TEST_DATA_P uint8_t durationBins[] = { 30, 40, 50, 60, 70, 80 };
-//   TEST_DATA_P uint8_t durationValues[] = { 30, 25, 20, 15, 10, 5 };
-//   populate_2dtable_P(&knockWindowDurationTable, durationValues, durationBins);
+    currentStatus.knockRetardActive = false;
+    currentStatus.knockPulseDetected = false;
+    currentStatus.knockCount = 1U;
+    currentStatus.knockRetard = 0U;
+    analogKnockReading = 0U;
+    BIT_CLEAR(currentStatus.LOOP_TIMER, BIT_TIMER_30HZ);
 }
 
-static void test_correctionKnock_firstStep(void) {
-    setup_correctionKnock();
+static void test_correctionKnockTiming_digital_waits_for_threshold(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_DIGITAL);
+    const uint32_t currMicros = 100000U;
 
-    TEST_ASSERT_EQUAL(-11, correctionKnock(-8));
+    TEST_ASSERT_EQUAL(25, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_FALSE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(0U, currentStatus.knockRetard);
+    TEST_ASSERT_FALSE(currentStatus.knockPulseDetected);
 }
 
-static void test_correctionKnock_disabled_modeoff(void) {
-    setup_correctionKnock();
-    configPage10.knock_mode = KNOCK_MODE_OFF;
-    TEST_ASSERT_EQUAL(-8, correctionKnock(-8));
+static void test_correctionKnockTiming_digital_starts_retard(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_DIGITAL);
+    currentStatus.knockCount = configPage10.knock_count;
+    const uint32_t currMicros = 100000U;
+    knockStartTime = currMicros;
+
+    TEST_ASSERT_EQUAL(22, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_TRUE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(configPage10.knock_firstStep, currentStatus.knockRetard);
+    TEST_ASSERT_FALSE(currentStatus.knockPulseDetected);
 }
 
-static void test_correctionKnock_disabled_counttoolow(void) {
-    setup_correctionKnock();
-    knockCounter = configPage10.knock_count - 1;
-    TEST_ASSERT_EQUAL(-8, correctionKnock(-8));
+static void test_correctionKnockTiming_digital_additional_pulse_increases_retard(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_DIGITAL);
+    currentStatus.knockCount = configPage10.knock_count + 1U;
+    currentStatus.knockRetardActive = true;
+    currentStatus.knockRetard = configPage10.knock_firstStep;
+    currentStatus.knockPulseDetected = true;
+    const uint32_t currMicros = 100000U;
+    knockStartTime = currMicros;
+
+    TEST_ASSERT_EQUAL(18, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_TRUE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(7U, currentStatus.knockRetard);
+    TEST_ASSERT_EQUAL_UINT8(configPage10.knock_count + 2U, currentStatus.knockCount);
+    TEST_ASSERT_FALSE(currentStatus.knockPulseDetected);
 }
 
-static void test_correctionKnock_disabled_knockactive(void) {
-    setup_correctionKnock();
-    currentStatus.knockActive = true;
-    TEST_ASSERT_EQUAL(-8, correctionKnock(-8));
+static void test_correctionKnockTiming_digital_clamps_max_retard(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_DIGITAL);
+    configPage10.knock_maxRetard = 7U;
+    configPage10.knock_firstStep = 5U;
+    configPage10.knock_stepSize = 10U;
+    currentStatus.knockCount = 20U;
+    currentStatus.knockRetardActive = true;
+    currentStatus.knockRetard = 5U;
+    currentStatus.knockPulseDetected = true;
+    const uint32_t currMicros = 100000U;
+
+    TEST_ASSERT_EQUAL(18, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_EQUAL_UINT8(7U, currentStatus.knockRetard);
 }
-#endif
+
+static void test_correctionKnockTiming_analog_inactive_path_noop(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_ANALOG);
+    configPage10.knock_threshold = 200U;
+    currentStatus.knockRetardActive = false;
+    analogKnockReading = configPage10.knock_threshold;
+    BIT_SET(currentStatus.LOOP_TIMER, BIT_TIMER_30HZ);
+    const uint32_t currMicros = 100000U;
+
+    TEST_ASSERT_EQUAL(25, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_FALSE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(0U, currentStatus.knockRetard);
+}
+
+static void test_correctionKnockTiming_analog_inactive_path_starts_retard(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_ANALOG);
+    configPage10.knock_threshold = 200U;
+    analogKnockReading = configPage10.knock_threshold + 1U;
+    BIT_SET(currentStatus.LOOP_TIMER, BIT_TIMER_30HZ);
+    const uint32_t currMicros = 100000U;
+
+    TEST_ASSERT_EQUAL(22, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_TRUE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(configPage10.knock_firstStep, currentStatus.knockRetard);
+}
+
+static void test_correctionKnockTiming_analog_active_path_increases_retard(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_ANALOG);
+    configPage10.knock_threshold = 200U;
+    currentStatus.knockRetardActive = true;
+    currentStatus.knockRetard = configPage10.knock_firstStep;
+    currentStatus.knockCount = configPage10.knock_count;
+    analogKnockReading = configPage10.knock_threshold + 1U;
+    const uint32_t knockStart = 100000U;
+    const uint32_t currMicros = knockStart + (configPage10.knock_stepTime * 1000UL);
+    knockStartTime = knockStart;
+
+    TEST_ASSERT_EQUAL(20, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_TRUE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(configPage10.knock_count + 1U, currentStatus.knockCount);
+    TEST_ASSERT_EQUAL_UINT8(5U, currentStatus.knockRetard);
+    TEST_ASSERT_EQUAL_UINT32(currMicros, knockStartTime);
+    TEST_ASSERT_EQUAL_UINT8(0U, knockLastRecoveryStep);
+}
+
+static void test_correctionKnockTiming_analog_active_path_noop_below_threshold(void) {
+    setup_correctionKnockTiming(KNOCK_MODE_ANALOG);
+    configPage10.knock_threshold = 200U;
+    currentStatus.knockRetardActive = true;
+    currentStatus.knockRetard = 3U;
+    currentStatus.knockCount = 5U;
+    analogKnockReading = configPage10.knock_threshold - 1U;
+    const uint32_t currMicros = 100000U;
+    knockStartTime = currMicros;
+    BIT_SET(currentStatus.LOOP_TIMER, BIT_TIMER_30HZ);
+
+    TEST_ASSERT_EQUAL(25, correctionKnockTiming(25, currMicros, stubGetAnalogKnock));
+    TEST_ASSERT_TRUE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(0U, currentStatus.knockRetard);
+}
+
+static void setup_correctionKnockRecovery(void) {
+    initialiseCorrections();
+
+    configPage10.knock_duration = 10U;
+    configPage10.knock_recoveryStepTime = 1U;
+    configPage10.knock_recoveryStep = 1U;
+    currentStatus.knockRetardActive = true;
+    currentStatus.knockRetard = 5U;
+    knockStartTime = 0U;
+    knockLastRecoveryStep = 0U;
+}
+
+static void test_correctionKnockRecovery_before_duration_no_reduction(void) {
+    setup_correctionKnockRecovery();
+
+    const uint32_t knockStart = 100000U;
+    const uint32_t currMicros = knockStart + (configPage10.knock_duration * 100000UL) - 1U;
+    knockStartTime = knockStart;
+
+    TEST_ASSERT_EQUAL_UINT8(5U, _calculateKnockRecovery(5U, currMicros));
+    TEST_ASSERT_TRUE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(5U, currentStatus.knockRetard);
+}
+
+static void test_correctionKnockRecovery_partial_reduction(void) {
+    setup_correctionKnockRecovery();
+
+    const uint32_t knockStart = 100000U;
+    const uint32_t currMicros = knockStart + (configPage10.knock_duration * 100000UL) + (1U * 100000UL);
+    knockStartTime = knockStart;
+    currentStatus.knockRetard = 5U;
+
+    TEST_ASSERT_EQUAL_UINT8(4U, _calculateKnockRecovery(5U, currMicros));
+    TEST_ASSERT_TRUE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(5U, currentStatus.knockRetard);
+}
+
+static void test_correctionKnockRecovery_complete_reset(void) {
+    setup_correctionKnockRecovery();
+
+    const uint32_t knockStart = 100000U;
+    const uint32_t currMicros = knockStart + (configPage10.knock_duration * 100000UL) + (3U * 100000UL);
+    knockStartTime = knockStart;
+    currentStatus.knockRetard = 3U;
+
+    TEST_ASSERT_EQUAL_UINT8(0U, _calculateKnockRecovery(3U, currMicros));
+    TEST_ASSERT_FALSE(currentStatus.knockRetardActive);
+    TEST_ASSERT_EQUAL_UINT8(0U, currentStatus.knockCount);
+}
 
 static void test_correctionKnock(void) {
+    RUN_TEST_P(test_correctionKnockTiming_digital_waits_for_threshold);
+    RUN_TEST_P(test_correctionKnockTiming_digital_starts_retard);
+    RUN_TEST_P(test_correctionKnockTiming_digital_additional_pulse_increases_retard);
+    RUN_TEST_P(test_correctionKnockTiming_digital_clamps_max_retard);
+    RUN_TEST_P(test_correctionKnockTiming_analog_inactive_path_noop);
+    RUN_TEST_P(test_correctionKnockTiming_analog_inactive_path_starts_retard);
+    RUN_TEST_P(test_correctionKnockTiming_analog_active_path_increases_retard);
+    RUN_TEST_P(test_correctionKnockTiming_analog_active_path_noop_below_threshold);
+    RUN_TEST_P(test_correctionKnockRecovery_before_duration_no_reduction);
+    RUN_TEST_P(test_correctionKnockRecovery_partial_reduction);
+    RUN_TEST_P(test_correctionKnockRecovery_complete_reset);
 }
 
 extern table2D_u8_u8_6 dwellVCorrectionTable; ///< 6 bin dwell voltage correction (2D)
@@ -856,6 +903,14 @@ static void test_correctionsDwell_wasted_nopertooth_largerevolutiontime(void) {
     TEST_ASSERT_EQUAL(800, correctionsDwell(800));
 }
 
+static void test_correctionsDwell_zero_revolutiontime(void) {
+    setup_correctionsDwell();
+
+    currentStatus.battery10 = 105;
+    currentStatus.revolutionTime = 0;
+    TEST_ASSERT_EQUAL(800, correctionsDwell(800));
+}
+
 static void test_correctionsDwell_initialises_current_actualDwell(void) {
     setup_correctionsDwell();
 
@@ -881,6 +936,7 @@ static void test_correctionsDwell(void) {
     RUN_TEST_P(test_correctionsDwell_nopertooth);
     RUN_TEST_P(test_correctionsDwell_pertooth);
     RUN_TEST_P(test_correctionsDwell_wasted_nopertooth_largerevolutiontime);
+    RUN_TEST_P(test_correctionsDwell_zero_revolutiontime);
     RUN_TEST_P(test_correctionsDwell_initialises_current_actualDwell);
     RUN_TEST_P(test_correctionsDwell_uses_batvcorrection);
     RUN_TEST_P(test_correctDwellClosedLoop_nochange);
@@ -893,6 +949,7 @@ static void test_correctionsDwell(void) {
 void testIgnCorrections(void) {
     SET_UNITY_FILENAME() {
         test_correctionFixedTiming();
+        test_correctionsIgn_dispatch();
         test_correctionCLTadvance();
         test_correctionCrankingFixedTiming();
         test_correctionFlexTiming();

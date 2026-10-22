@@ -5,12 +5,12 @@
 
 void tearDown(void) 
 { 
-  detachInterrupt( digitalPinToInterrupt(pinTrigger) );
-  detachInterrupt( digitalPinToInterrupt(pinTrigger2) );
-  detachInterrupt( digitalPinToInterrupt(pinTrigger3) );
+  detachInterrupt( digitalPinToInterrupt(pinNumbers.pinTrigger) );
+  detachInterrupt( digitalPinToInterrupt(pinNumbers.pinTrigger2) );
+  detachInterrupt( digitalPinToInterrupt(pinNumbers.pinTrigger3) );
 }
 
-void runAllDecoderTests(void)
+void runAllTests(void)
 {
     extern void testMissingTooth(void);
     extern void testDualWheel(void);
@@ -20,11 +20,27 @@ void runAllDecoderTests(void)
     extern void testNGC(void);
     extern void testSuzukiK6A_setEndTeeth(void);
     extern void testSuzukiK6A_getCrankAngle(void);
-    extern void testDecoder_General(void);
-    extern void testToothLoggers(void);
-    extern void testDecoderBuilder(void);
-    extern void testDecoderInit(void);
-    
+    extern void testGM7X(void);
+    extern void testHondaJ32(void);
+    extern void test4G63(void);
+    extern void test24X(void);
+    extern void testJeep2000(void);
+    extern void testMiata9905(void);
+    extern void testMazdaAU(void);
+    extern void testSubaru67(void);
+    extern void test420a(void);
+    extern void testVMax(void);
+    extern void testBasicDistributor(void);
+    extern void testAudi135(void);
+    extern void testDaihatsu(void);
+    extern void testFordTFI(void);
+    extern void testHarley(void);
+    extern void testHondaD17(void);
+    extern void testNon360(void);
+    extern void testRoverMems(void);
+    extern void testThirtySixMinus21(void);
+    extern void testThirtySixMinus22(void);
+
     testMissingTooth();
     testDualWheel();
     testRenix();
@@ -33,10 +49,26 @@ void runAllDecoderTests(void)
     testNGC();
     testSuzukiK6A_setEndTeeth();
     testSuzukiK6A_getCrankAngle();
-    testDecoder_General();
-    testToothLoggers();
-    testDecoderBuilder();
-    testDecoderInit();
+    testGM7X();
+    testHondaJ32();
+    test4G63();
+    test24X();
+    testJeep2000();
+    testMiata9905();
+    testMazdaAU();
+    testSubaru67();
+    test420a();
+    testVMax();
+    testBasicDistributor();
+    testAudi135();
+    testDaihatsu();
+    testFordTFI();
+    testHarley();
+    testHondaD17();
+    testNon360();
+    testRoverMems();
+    testThirtySixMinus21();
+    testThirtySixMinus22();
 }
 
-TEST_HARNESS(runAllDecoderTests)
+TEST_HARNESS(runAllTests)

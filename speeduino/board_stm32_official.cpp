@@ -1,13 +1,15 @@
 #include "board_definition.h"
 
 #if defined(STM32_CORE_VERSION_MAJOR)
-#include "auxiliaries.h"
-#include "idle.h"
+#include "src/controllers/vvt/vvtController.h"
+#include "src/controllers/idle/idle.h"
 #include "HardwareTimer.h"
 #include "timers.h"
 #include "comms_secondary.h"
 #include "scheduler_ignition_controller.h"
 #include "scheduler_fuel_controller.h"
+#include "src/controllers/fan/fanController.h"
+#include "src/controllers/boost/boostController.h"
 
 #if defined(BOARD_FCR_MICRO_F4)
 extern "C" void __real_pinMode(uint8_t pin, uint8_t mode);
@@ -156,9 +158,15 @@ STM32RTC& rtc = STM32RTC::getInstance();
   #endif
 
   STM_FUEL_INTERRUPT(1)
+  #if (INJ_CHANNELS >= 2)
   STM_FUEL_INTERRUPT(2)
+  #endif
+  #if (INJ_CHANNELS >= 3)
   STM_FUEL_INTERRUPT(3)
+  #endif
+  #if (INJ_CHANNELS >= 4)
   STM_FUEL_INTERRUPT(4)
+  #endif
   #if (INJ_CHANNELS >= 5)
   STM_FUEL_INTERRUPT(5)
   #endif
@@ -173,9 +181,15 @@ STM32RTC& rtc = STM32RTC::getInstance();
   #endif
 
   STM_IGNITION_INTERRUPT(1)
+  #if (IGN_CHANNELS >= 2)
   STM_IGNITION_INTERRUPT(2)
+  #endif
+  #if (IGN_CHANNELS >= 3)
   STM_IGNITION_INTERRUPT(3)
+  #endif
+  #if (IGN_CHANNELS >= 4)
   STM_IGNITION_INTERRUPT(4)
+  #endif
   #if (IGN_CHANNELS >= 5)
   STM_IGNITION_INTERRUPT(5)
   #endif
@@ -218,11 +232,6 @@ STM32RTC& rtc = STM32RTC::getInstance();
     ***********************************************************************************************************
     * Idle
     */
-    if (isPwmIac(configPage6))
-    {
-        idle_pwm_max_count = (uint16_t)(MICROS_PER_SEC / (TIMER_RESOLUTION * configPage6.idleFreq * 2U)); //Converts the frequency in Hz to the number of ticks (at 4uS) it takes to complete 1 cycle. Note that the frequency is divided by 2 coming from TS to allow for up to 5KHz
-    } 
-
     //This must happen at the end of the idle init
     #if ( STM32_CORE_VERSION_MAJOR < 2 )
     Timer1.setMode(4, TIMER_OUTPUT_COMPARE);
@@ -261,11 +270,6 @@ STM32RTC& rtc = STM32RTC::getInstance();
     ***********************************************************************************************************
     * Auxiliaries
     */
-    //2uS resolution Min 8Hz, Max 5KHz
-    boost_pwm_max_count = (uint16_t)(MICROS_PER_SEC / (TIMER_RESOLUTION * configPage6.boostFreq * 2U)); //Converts the frequency in Hz to the number of ticks (at 4uS) it takes to complete 1 cycle. The x2 is there because the frequency is stored at half value (in a byte) to allow frequencies up to 511Hz
-    vvt_pwm_max_count = (uint16_t)(MICROS_PER_SEC / (TIMER_RESOLUTION * configPage6.vvtFreq * 2U)); //Converts the frequency in Hz to the number of ticks (at 4uS) it takes to complete 1 cycle
-    fan_pwm_max_count = (uint16_t)(MICROS_PER_SEC / (TIMER_RESOLUTION * configPage6.fanFreq * 2U)); //Converts the frequency in Hz to the number of ticks (at 4uS) it takes to complete 1 cycle
-
     //Need to be initialised last due to instant interrupt
     #if ( STM32_CORE_VERSION_MAJOR < 2 )
     Timer1.setMode(1, TIMER_OUTPUT_COMPARE);
@@ -284,9 +288,9 @@ STM32RTC& rtc = STM32RTC::getInstance();
     ***********************************************************************************************************
     * Schedules
     */
-    Timer1.setOverflow((numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
-    Timer2.setOverflow((numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
-    Timer3.setOverflow((numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
+    Timer1.setOverflow((std::numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
+    Timer2.setOverflow((std::numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
+    Timer3.setOverflow((std::numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
 
     Timer1.setPrescaleFactor(((Timer1.getTimerClkFreq()/1000000) * TIMER_RESOLUTION)-1);   //4us resolution
     Timer2.setPrescaleFactor(((Timer2.getTimerClkFreq()/1000000) * TIMER_RESOLUTION)-1);   //4us resolution
@@ -316,11 +320,17 @@ STM32RTC& rtc = STM32RTC::getInstance();
     //Attach interrupt functions
     //Injection
     Timer3.attachInterrupt(1, FUEL_INTERRUPT_NAME(1));
+    #if (INJ_CHANNELS >= 2)
     Timer3.attachInterrupt(2, FUEL_INTERRUPT_NAME(2));
+    #endif
+    #if (INJ_CHANNELS >= 3)
     Timer3.attachInterrupt(3, FUEL_INTERRUPT_NAME(3));
+    #endif
+    #if (INJ_CHANNELS >= 4)
     Timer3.attachInterrupt(4, FUEL_INTERRUPT_NAME(4));
+    #endif
     #if (INJ_CHANNELS >= 5)
-    Timer5.setOverflow((numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
+    Timer5.setOverflow((std::numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
     Timer5.setPrescaleFactor(((Timer5.getTimerClkFreq()/1000000) * TIMER_RESOLUTION)-1);   //4us resolution
     #if ( STM32_CORE_VERSION_MAJOR < 2 )
     Timer5.setMode(1, TIMER_OUTPUT_COMPARE);
@@ -356,11 +366,17 @@ STM32RTC& rtc = STM32RTC::getInstance();
 
     //Ignition
     Timer2.attachInterrupt(1, IGNITION_INTERRUPT_NAME(1)); 
+    #if (IGN_CHANNELS >= 2)
     Timer2.attachInterrupt(2, IGNITION_INTERRUPT_NAME(2));
+    #endif
+    #if (IGN_CHANNELS >= 3)
     Timer2.attachInterrupt(3, IGNITION_INTERRUPT_NAME(3));
+    #endif
+    #if (IGN_CHANNELS >= 4)
     Timer2.attachInterrupt(4, IGNITION_INTERRUPT_NAME(4));
+    #endif
     #if (IGN_CHANNELS >= 5)
-    Timer4.setOverflow((numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
+    Timer4.setOverflow((std::numeric_limits<COMPARE_TYPE>::max)(), TICK_FORMAT);
     Timer4.setPrescaleFactor(((Timer4.getTimerClkFreq()/1000000) * TIMER_RESOLUTION)-1);   //4us resolution
     #if ( STM32_CORE_VERSION_MAJOR < 2 )
     Timer4.setMode(1, TIMER_OUTPUT_COMPARE);
@@ -412,7 +428,7 @@ STM32RTC& rtc = STM32RTC::getInstance();
     free(hTop);
     freeRam = stackTop - heapTop;
 
-    return min((uint32_t)(numeric_limits<uint16_t>::max)(), freeRam);
+    return (std::min)((uint32_t)(std::numeric_limits<uint16_t>::max)(), freeRam);
   }
 
   void doSystemReset( void )
@@ -464,7 +480,7 @@ void boardInitRTC(void)
 }
 
 
-void boardInitPins(uint8_t)
+void boardInitPins(uint8_t, pinNumbers_t &)
 {
   // Do nothing
 }
@@ -491,6 +507,12 @@ static uint16_t getEepromWriteBlockSize(const statuses &current)
 storage_api_t getBoardStorageApi(void)
 {
   return getEEPROMStorageApi(getEepromWriteBlockSize);
+}
+
+/** @brief Get the PWM timer resolution in uS */
+uint8_t getPwmTimerResolution(void)
+{
+  return TIMER_RESOLUTION;
 }
 
 #endif

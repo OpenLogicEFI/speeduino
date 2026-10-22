@@ -1,11 +1,12 @@
 #include "decoder_builder.h"
 #include "preprocessor.h"
+#include "decoder_t.h"
 
 #pragma GCC optimize ("Os")
 
 static void nullTriggerHandler (void){return;} //initialisation function for triggerhandlers, does exactly nothing
-static uint16_t nullGetRPM(void){return 0;} //initialisation function for getRpm, returns safe value of 0
-static int16_t nullGetCrankAngle(void){return 0;} //initialisation function for getCrankAngle, returns safe value of 0
+static uint32_t nullGetRevolutionTime(void){return 0;} //initialisation function for getRevolutionTime, returns safe value of 0
+static int16_t nullGetCrankAngle(uint32_t currMicros){ UNUSED(currMicros); return 0;} //initialisation function for getCrankAngle, returns safe value of 0
 static bool nullEngineIsRunning(uint32_t currMillis) { UNUSED(currMillis); return false; }
 static decoder_status_t nullGetStatus(void) noexcept { return decoder_status_t{}; }
 static decoder_features_t nullGetFeatures(void) { return decoder_features_t(); }
@@ -15,7 +16,7 @@ decoder_builder_t::decoder_builder_t(void)
     (void)setPrimaryTrigger(&nullTriggerHandler, TRIGGER_EDGE_NONE);
     (void)setSecondaryTrigger(&nullTriggerHandler, TRIGGER_EDGE_NONE);
     (void)setTertiaryTrigger(&nullTriggerHandler, TRIGGER_EDGE_NONE);
-    (void)setGetRPM(&nullGetRPM);
+    (void)setGetRevolutionTime(&nullGetRevolutionTime);
     (void)setGetCrankAngle(&nullGetCrankAngle);
     (void)setSetEndTeeth(&nullTriggerHandler);
     (void)setReset(&nullTriggerHandler);
@@ -28,8 +29,8 @@ decoder_builder_t::decoder_builder_t(const decoder_t &decoder)
     (void)setPrimaryTrigger(decoder.primary);
     (void)setSecondaryTrigger(decoder.secondary);
     (void)setTertiaryTrigger(decoder.tertiary);
-    (void)setGetRPM(decoder.getRPM);
-    (void)setGetCrankAngle(decoder.getCrankAngle);
+    (void)setGetRevolutionTime(decoder.getRevolutionTime);
+    (void)setGetCrankAngle(decoder.pGetCrankAngle);
     (void)setSetEndTeeth(decoder.setEndTeeth);
     (void)setReset(decoder.reset);
     (void)setIsEngineRunning(decoder.isEngineRunning);
@@ -79,15 +80,15 @@ decoder_builder_t& decoder_builder_t::setTertiaryTrigger(interrupt_t::callback_t
     return setTertiaryTrigger( interrupt_t{ handler, edge } );
 }
 
-decoder_builder_t& decoder_builder_t::setGetRPM(decoder_t::getRPM_t getRPM)
+decoder_builder_t& decoder_builder_t::setGetRevolutionTime(decoder_t::getRevolutionTime_t getRevolutionTime)
 {
-    _decoder.getRPM = getRPM==nullptr ? &nullGetRPM : getRPM;
+    _decoder.getRevolutionTime = getRevolutionTime==nullptr ? &nullGetRevolutionTime : getRevolutionTime;
     return *this;
 }
 
 decoder_builder_t& decoder_builder_t::setGetCrankAngle(decoder_t::getCrankAngle_t getCrankAngle)
 {
-    _decoder.getCrankAngle = getCrankAngle==nullptr ? &nullGetCrankAngle : getCrankAngle;
+    _decoder.pGetCrankAngle = getCrankAngle==nullptr ? &nullGetCrankAngle : getCrankAngle;
     return *this;
 }
 
@@ -109,12 +110,14 @@ decoder_builder_t& decoder_builder_t::setIsEngineRunning(decoder_t::engine_runni
     return *this;
 }
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnoexcept-type"
 decoder_builder_t& decoder_builder_t::setGetStatus(decoder_t::status_fun_t getStatus)
 {
     _decoder.getStatus = getStatus==nullptr ? &nullGetStatus : getStatus;
     return *this;
 }
-
+#pragma GCC diagnostic pop
 
 decoder_builder_t& decoder_builder_t::setGetFeatures(decoder_t::feature_fun_t getFeatures)
 {

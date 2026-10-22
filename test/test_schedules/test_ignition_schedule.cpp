@@ -3,10 +3,10 @@
 #include <unity.h>
 #include "../test_utils.h"
 #include "scheduler.h"
-#include "src/stdlib/type_traits.h"
+#include <type_traits>
 
-using raw_counter_t = type_traits::remove_reference<IgnitionSchedule::counter_t>::type;
-using raw_compare_t = type_traits::remove_reference<IgnitionSchedule::compare_t>::type;
+using raw_counter_t = std::remove_reference<IgnitionSchedule::counter_t>::type;
+using raw_compare_t = std::remove_reference<IgnitionSchedule::compare_t>::type;
 
 extern void setIgnitionScheduleDuration(IgnitionSchedule &schedule, uint32_t delay, uint16_t duration);
 
@@ -35,7 +35,7 @@ static void test_ignition_schedule_RUNNING_to_RUNNINGWITHNEXT_Disallow(void) {
   // Calculate a revolution time that will result in 360° taking longer than MAX_TIMER_PERIOD
   auto revTime = MAX_TIMER_PERIOD+(MAX_TIMER_PERIOD/CRANK_ANGLE_MAX_IGN);
   setAngleConverterRevolutionTime(revTime);
-  TEST_ASSERT_GREATER_THAN_UINT32(MAX_TIMER_PERIOD, angleToTimeMicroSecPerDegree((uint16_t)CRANK_ANGLE_MAX_IGN));
+  TEST_ASSERT_GREATER_THAN_UINT32(MAX_TIMER_PERIOD, angleToTime((uint16_t)CRANK_ANGLE_MAX_IGN));
   
   setIgnitionScheduleDuration(schedule, TIMEOUT, DURATION);
   // Should not have changed
@@ -46,7 +46,7 @@ static void test_ignition_schedule_RUNNING_to_RUNNINGWITHNEXT_Disallow(void) {
 
   // Positive test
   setAngleConverterRevolutionTime(revTime/2U);
-  TEST_ASSERT_LESS_THAN(MAX_TIMER_PERIOD, angleToTimeMicroSecPerDegree((uint32_t)CRANK_ANGLE_MAX_INJ));    
+  TEST_ASSERT_LESS_THAN(MAX_TIMER_PERIOD, angleToTime((uint32_t)CRANK_ANGLE_MAX_INJ));    
   setIgnitionScheduleDuration(schedule, TIMEOUT+TIMEOUT_OFFSET, DURATION+DURATION_OFFSET);
   // Should not have changed
   TEST_ASSERT_EQUAL(INITIAL_COUNTER + uS_TO_TIMER_COMPARE(TIMEOUT), schedule._compare);

@@ -2,6 +2,7 @@
 #define MATH_H
 
 #include <stdint.h>
+#include <type_traits>
 #include <avr-fast-shift.h>
 #include <avr-fast-div.h>
 #ifdef USE_LIBDIVIDE
@@ -26,6 +27,9 @@ static constexpr uint32_t MICROS_PER_HOUR = MICROS_PER_MIN*60U;
 
 /** @brief Self-explanatory */
 static constexpr uint32_t MILLI_PER_SEC = MICROS_PER_SEC/1000;
+
+/** @brief Convert a frequency in Hz to the equivalent number of PWM timer ticks */
+uint16_t pwmFreqToTicks(uint16_t frequency);
 
 /**
  * @defgroup group-rounded-div Rounding integer division
@@ -337,18 +341,42 @@ static inline uint16_t halfPercentage(uint8_t percent, uint16_t value) {
 }
 
 /**
- * @brief Make one pass at correcting the value into the range [min, max)
+ * @brief Make **one* pass at correcting the \p value into the range [ \p min, \p  max)
  * 
  * @param min Minimum value (inclusive)
  * @param max Maximum value (exclusive)
  * @param value Value to nudge
- * @param nudgeAmount Amount to change value by 
- * @return int16_t 
  */
-static inline int16_t nudge(int16_t min, int16_t max, int16_t value, int16_t nudgeAmount)
+template <typename T>
+static inline T nudge(T min, T max, T value)
 {
+    T nudgeAmount = max - min;
     if (value<min) { return value + nudgeAmount; }
-    if (value>max) { return value - nudgeAmount; }
+    if (value>=max) { return value - nudgeAmount; }
+    return value;
+}
+
+/**
+ * @brief Correct \p value into the range [ \p min, \p  max ) by adding or subtracting ( \p max- \p min )
+ * 
+ * We assume \p value is only a few multiples outside the range
+ * 
+ * @param min Minimum value (inclusive)
+ * @param max Maximum value (exclusive). Must be greater than min.
+ * @param value Value to nudge
+ */
+template <typename T>
+static inline T normalize(T min, T max, T value)
+{
+    T range = max - min;
+    while (value < min)
+    {
+        value += range;
+    }
+    while (value >= max)
+    {
+        value -= range;
+    }
     return value;
 }
 

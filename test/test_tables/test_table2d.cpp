@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include "table2d.h"
 #include "../test_utils.h"
-#include "src/stdlib/limits.h"
+#include <limits>
 
 #define U8_X4_DATA 251, 211, 199, 167,
 static uint8_t table2d_data_u8_4[4] = { U8_X4_DATA };
@@ -104,8 +104,8 @@ static void test_getValue_withinBins(axis_t (&pAxisBin)[sizeT], value_t (&pCurve
         axis_t lookupValue = intermediate(testSubject.axis[i], testSubject.axis[i+1], binFrac);
         int32_t expected = (int32_t)map(lookupValue, testSubject.axis[i], testSubject.axis[i+1], testSubject.values[i], testSubject.values[i+1]);
         value_t result = table2D_getValue(&testSubject, lookupValue);
-        char szMsg[512];
-        sprintf(szMsg, "Loop: %" PRIu8 ", VT %s, AT %s, lookup: %" PRId32 ", data[i]: %" PRId32 ", data[i+1]: %" PRId32 ", binFrac %" PRIu8, 
+        char szMsg[512] = "";
+        snprintf(szMsg, _countof(szMsg)-1, "Loop: %" PRIu8 ", VT %s, AT %s, lookup: %" PRId32 ", data[i]: %" PRId32 ", data[i+1]: %" PRId32 ", binFrac %" PRIu8, 
                         i,
                         GetTypeName<value_t>(), GetTypeName<axis_t>(), 
                         (int32_t)lookupValue, (int32_t)expected, (int32_t)result, binFrac);
@@ -141,9 +141,9 @@ static void test_getValue_bin_edges(axis_t (&pAxisBin)[sizeT], value_t (&pCurve)
     for (uint8_t i=0; i<sizeT; ++i) {
         value_t result = (value_t)table2D_getValue(&testSubject, testSubject.axis[i]);
         // char szMsg[64];
-        // sprintf(szMsg, "%d, %d lookup %d: %d", testSubject.values.typeIndicator, testSubject.axis.typeIndicator, i, axis[i]);
+        // snprintf(szMsg, _countof(szMsg)-1, "%d, %d lookup %d: %d", testSubject.values.typeIndicator, testSubject.axis.typeIndicator, i, axis[i]);
         TEST_ASSERT_EQUAL(testSubject.values[i], result);
-        // sprintf(szMsg, "%d, %d lookup %d", testSubject.values.typeIndicator, testSubject.axis.typeIndicator, i);
+        // snprintf(szMsg, _countof(szMsg)-1, "%d, %d lookup %d", testSubject.values.typeIndicator, testSubject.axis.typeIndicator, i);
         TEST_ASSERT_EQUAL(i==0  ? 1 : i, testSubject.cache.lastBinUpperIndex);
     }
 }
@@ -161,7 +161,7 @@ static void test_getValue_overMax(axis_t (&pAxisBin)[sizeT], value_t (&pCurve)[s
     axis_t lookupValue =(axis_t)(testSubject.axis[sizeT-1]+1);
     value_t result = table2D_getValue(&testSubject, lookupValue);
     char szMsg[256];
-    sprintf(szMsg, "VT %s, AT %s, sizeT: %" PRIu8 ", lookup: %" PRId32 ", data[sizeT-1]: %" PRId32, 
+    snprintf(szMsg, _countof(szMsg)-1, "VT %s, AT %s, sizeT: %" PRIu8 ", lookup: %" PRId32 ", data[sizeT-1]: %" PRId32, 
             GetTypeName<value_t>(), GetTypeName<axis_t>(), 
             sizeT, (int32_t)lookupValue, (int32_t)testSubject.values[sizeT-1]);
     TEST_ASSERT_EQUAL_MESSAGE(testSubject.values[sizeT-1], result, szMsg);
@@ -211,7 +211,7 @@ static void test_withinBin(void) {
 template <typename axis_t, uint8_t sizeT>
 static void assert_findBin(axis_t (&pAxisBin)[sizeT], axis_t lookUp, uint8_t expectedUpperIndex)
 {
-    _table2d_detail::Bin<axis_t> result = _table2d_detail::findBin<axis_t, sizeT>(pAxisBin, lookUp);
+    _table2d_detail::Bin<axis_t> result = _table2d_detail::findCachedBin(UINT8_MAX, pAxisBin, pAxisBin+sizeT, lookUp);
     TEST_ASSERT_EQUAL(expectedUpperIndex, result.upperIndex);
     TEST_ASSERT_EQUAL(pAxisBin[expectedUpperIndex-1], result.lowerValue());
     TEST_ASSERT_EQUAL(pAxisBin[expectedUpperIndex], result.upperValue());
@@ -237,7 +237,7 @@ static void test_table2d_all_decrementing(axis_t (&pAxisBin)[sizeT], value_t (&p
 {
     table2D<axis_t, value_t, sizeT> testSubject(&pAxisBin, &pCurve);
 
-    value_t result_last = (numeric_limits<value_t>::max)();
+    value_t result_last = (std::numeric_limits<value_t>::max)();
     for (axis_t loop=testSubject.axis[0]; loop<=testSubject.axis[sizeT-1]; ++loop)
     {
         value_t result = table2D_getValue(&testSubject, loop);
@@ -271,7 +271,7 @@ static void test_lookup_perf(void) {
     TEST_ASSERT_INT32_WITHIN(UINT32_MAX/2, UINT32_MAX/2, paramA);
 
     char buffer[128];
-    sprintf(buffer, "Timing: %" PRIu32, timerA.duration_micros());
+    snprintf(buffer, _countof(buffer)-1, "Timing: %" PRIu32, timerA.duration_micros());
     TEST_MESSAGE(buffer);
 }
 

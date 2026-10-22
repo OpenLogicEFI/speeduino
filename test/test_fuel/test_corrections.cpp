@@ -7,6 +7,7 @@
 #include "sensors_map_structs.h"
 #include "units.h"
 #include "fuel_calcs.h"
+#include "src/PID/PID.h"
 
 extern byte correctionWUE(void);
 extern table2D_u8_u8_10 WUETable; ///< 10 bin Warm Up Enrichment map (2D)
@@ -328,8 +329,10 @@ static void setup_valid_ego_cycle(void) {
   ignitionCount = AFRnextCycle + (configPage6.egoCount/2U); 
 }
 
+extern PID egoPID;
 static void setup_ego_simple(void) {
   initialiseCorrections();
+  egoPID.resetIntegral(0);
 
   configPage6.egoType = EGO_TYPE_NARROW;
   configPage6.egoAlgorithm = EGO_ALGORITHM_SIMPLE;
@@ -704,43 +707,63 @@ static void test_corrections_bat(void)
 uint8_t correctionLaunch(void);
 
 static void test_corrections_launch_inactive(void) {
-  currentStatus.launchingHard = false;
-  currentStatus.launchingSoft = false;
+  currentStatus.launchStatus.launchingHard = false;
+  currentStatus.launchStatus.launchingSoft = false;
   configPage6.lnchFuelAdd = 25;
 
   TEST_ASSERT_EQUAL(100U, correctionLaunch() );
 }
 
 static void test_corrections_launch_hard(void) {
-  currentStatus.launchingHard = true;
-  currentStatus.launchingSoft = false;
+  currentStatus.launchStatus.launchingHard = true;
+  currentStatus.launchStatus.launchingSoft = false;
   configPage6.lnchFuelAdd = 25;
 
   TEST_ASSERT_EQUAL(125U, correctionLaunch() );
 }
 
 static void test_corrections_launch_soft(void) {
-  currentStatus.launchingHard = false;
-  currentStatus.launchingSoft = true;
+  currentStatus.launchStatus.launchingHard = false;
+  currentStatus.launchStatus.launchingSoft = true;
   configPage6.lnchFuelAdd = 25;
 
   TEST_ASSERT_EQUAL(125U, correctionLaunch() );
 }
 
 static void test_corrections_launch_both(void) {
-  currentStatus.launchingHard = true;
-  currentStatus.launchingSoft = true;
+  currentStatus.launchStatus.launchingHard = true;
+  currentStatus.launchStatus.launchingSoft = true;
   configPage6.lnchFuelAdd = 25;
 
   TEST_ASSERT_EQUAL(125U, correctionLaunch() );
 }
 
 static void test_corrections_launch_removeFuel(void) {
-  currentStatus.launchingHard = true;
-  currentStatus.launchingSoft = true;
+  currentStatus.launchStatus.launchingHard = true;
+  currentStatus.launchStatus.launchingSoft = true;
   configPage6.lnchFuelAdd = -25;
 
   TEST_ASSERT_EQUAL(75U, correctionLaunch() );
+}
+
+static void test_corrections_launch_maxAdd(void) {
+  //lnchFuelAdd max is +80 (see speeduino.ini). 100 + 80 = 180, which exceeds
+  //int8_t range - the accumulator must be wide enough to hold it without relying
+  //on implementation-defined narrowing.
+  currentStatus.launchStatus.launchingHard = true;
+  currentStatus.launchStatus.launchingSoft = false;
+  configPage6.lnchFuelAdd = 80;
+
+  TEST_ASSERT_EQUAL(180U, correctionLaunch() );
+}
+
+static void test_corrections_launch_minAdd(void) {
+  //lnchFuelAdd min is -40 (see speeduino.ini). 100 - 40 = 60.
+  currentStatus.launchStatus.launchingHard = false;
+  currentStatus.launchStatus.launchingSoft = true;
+  configPage6.lnchFuelAdd = -40;
+
+  TEST_ASSERT_EQUAL(60U, correctionLaunch() );
 }
 
 static void test_corrections_launch(void)
@@ -750,6 +773,8 @@ static void test_corrections_launch(void)
   RUN_TEST_P(test_corrections_launch_soft);
   RUN_TEST_P(test_corrections_launch_both);
   RUN_TEST_P(test_corrections_launch_removeFuel);
+  RUN_TEST_P(test_corrections_launch_maxAdd);
+  RUN_TEST_P(test_corrections_launch_minAdd);
 }
 
 extern bool correctionDFCO(void);
@@ -972,7 +997,8 @@ static void setup_AE(void) {
 	configPage2.aeColdTaperMin = 0;
 	
   currentStatus.coolant = temperatureRemoveOffset(configPage2.aeColdTaperMax) + 1;
-  currentStatus.AEEndTime = micros();
+  //Start AE far enough in the past that it has already expired
+  currentStatus.AEStartTime = micros() - TIME_TENTH_MILLIS.toUser(configPage2.aeTime);
 
   reset_AE();
 }
@@ -1594,8 +1620,8 @@ static void test_corrections_correctionsFuel_ae_modes(void) {
   currentStatus.runSecs = 255; 
   currentStatus.battery10 = 90;  
   currentStatus.IAT = 100;
-  currentStatus.launchingHard = false;
-  currentStatus.launchingSoft = false;
+  currentStatus.launchStatus.launchingHard = false;
+  currentStatus.launchStatus.launchingSoft = false;
   currentStatus.isDFCOActive = false;
   currentStatus.rotationStatus = EngineRotationStatus::Running;
   currentStatus.ASEValue = 100U;
@@ -1682,8 +1708,8 @@ static void test_corrections_correctionsFuel_clip_limit(void) {
   currentStatus.IAT = temperatureRemoveOffset(100);
   currentStatus.baro = 100;
   currentStatus.ethanolPct = 100;
-  currentStatus.launchingHard = false;
-  currentStatus.launchingSoft = false;
+  currentStatus.launchStatus.launchingHard = false;
+  currentStatus.launchStatus.launchingSoft = false;
   currentStatus.AEamount = 100U;
   currentStatus.ASEValue = 100U;
   currentStatus.TPSlast = 0;

@@ -1,28 +1,23 @@
 #include <Arduino.h>
 #include <unity.h>
-#include "test_calcs_common.h"
+#include "../test_calcs_common.h"
 #include "scheduler.h"
 #include "crankMaths.h"
 #include "decoders.h"
 #include "../test_utils.h"
+#include "globals.h"
 
 #if !defined(_countof)
 #define _countof(x) (sizeof(x) / sizeof (x[0]))
 #endif
 
-extern void SetRevolutionTime(uint32_t revTime);
+extern uint32_t _calculateIgnitionTimeout(const IgnitionSchedule &schedule, int16_t crankAngle);
+extern void calculateIgnitionAngles(IgnitionSchedule &schedule, uint16_t dwellAngle, int8_t advance);
+extern void calculateIgnitionTrailingRotary(IgnitionSchedule &leading, uint16_t dwellAngle, int16_t rotarySplitDegrees, IgnitionSchedule &trailing);
 
 constexpr uint16_t DWELL_TIME_MS = 4;
 
 uint16_t dwellAngle;
-
-void setEngineSpeed(uint16_t rpm, int16_t max_crank) 
-{
-  SetRevolutionTime(UDIV_ROUND_CLOSEST(60UL*1000000UL, rpm, uint32_t));
-  CRANK_ANGLE_MAX_IGN = max_crank;
-  CRANK_ANGLE_MAX_INJ = max_crank;
-  dwellAngle = timeToAngleDegPerMicroSec(DWELL_TIME_MS*1000UL);
-}
 
 struct ign_test_parameters
 {
@@ -68,8 +63,7 @@ void test_calc_ign_timeout(const ign_test_parameters *pStart, const ign_test_par
 void test_calc_ign_timeout_360()
 {
     setEngineSpeed(4000, 360);
-    
-    TEST_ASSERT_EQUAL(15000, currentStatus.revolutionTime);    
+    dwellAngle = timeToAngle(DWELL_TIME_MS*1000UL);
     TEST_ASSERT_EQUAL(96, dwellAngle);
 
   // Expected test values were generated using floating point calculations (in Excel)
@@ -274,6 +268,7 @@ void test_calc_ign_timeout_360()
 void test_calc_ign_timeout_720()
 {
   setEngineSpeed(4000, 720);
+  dwellAngle = timeToAngle(DWELL_TIME_MS*1000UL);
 
   // Expected test values were generated using floating point calculations (in Excel)
   static const ign_test_parameters test_data[] PROGMEM = {
